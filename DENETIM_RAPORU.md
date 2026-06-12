@@ -3,6 +3,12 @@
 **Denetim tarihi:** 12.06.2026 · **Denetlenen sürüm:** commit `ae61a41`
 **Denetçi rolü:** Bağımsız denetim; geliştiricinin hiçbir varsayımına güvenilmedi, tüm değerler ham veriden yeniden hesaplandı.
 
+> **GÜNCELLEME (12.06.2026):** Aşağıdaki 6 FAILED bulgunun tamamı giderildi;
+> önce/sonra kanıtları ve testler için **DUZELTME_RAPORU.md**'ye bakın.
+> Bölüm gövdeleri tarihsel kanıt olarak DEĞİŞTİRİLMEDİ; güncel durumlar özet
+> tabloda ve her başlıkta "GİDERİLDİ" notuyla işaretlidir. UNVERIFIED
+> maddeler (gerçek üretim verisi gerektirenler) hâlâ geçerlidir.
+
 ## 0. Denetimin kapsamı ve KRİTİK SINIRLAMA
 
 Depo yalnızca **uygulama kodunu** içeriyor. Denetim talimatında adı geçen gerçek veri
@@ -27,6 +33,8 @@ Bu nedenle denetim iki katmanda yapıldı:
 ---
 
 ## 1. Veri bütünlüğü kontrolleri — **FAILED (1 hata) + UNVERIFIED (gerçek dosya yok)**
+
+> **GİDERİLDİ:** 1.5'teki boş Order # bulgusu FIX 2 ile düzeltildi (DUZELTME_RAPORU.md).
 
 ### 1.1 Gerçek `shipstation_orders.csv` istatistikleri — UNVERIFIED
 Dosya depoda yok; toplam satır / benzersiz Order # / benzersiz Store sayıları ve sipariş içi
@@ -68,6 +76,8 @@ göstermek). Boş Store satırları için açık bir uyarı eklenmeli.
 
 ## 2. ShipStation API / kargo maliyeti kontrolleri — PASSED (mekanizma) + UNVERIFIED (gerçek veri) + 1 FAILED
 
+> **GİDERİLDİ:** 2.5'teki store_id tek-sipariş riski FIX 6 ile düzeltildi (≥3 kanıt + onay akışı).
+
 ### 2.1 API label sayısı vs shipments CSV — UNVERIFIED
 Canlı API ve gerçek CSV yok; %2 fark analizi yapılamadı.
 
@@ -97,6 +107,8 @@ ve sonraki TÜM ayların kargo dağılımını saptırır.
 ---
 
 ## 2b. Tarih uyuşmazlığı ve Order # eşleştirme — **FAILED (denetimin en kritik bölümü)**
+
+> **GİDERİLDİ:** 2b.1–2b.2 FIX 1, 2b.4–2b.6 FIX 4/5, 2b.8 FIX 3 ile düzeltildi (DUZELTME_RAPORU.md).
 
 ### 2b.1 Ay sonu (ileri) sınır testi — **FAILED**
 Talimat gereği ay sonunda verilen siparişin kargo maliyeti, label sonraki ay kesilse bile
@@ -265,22 +277,27 @@ gerçek Mayıs raporunun kabulü **UNVERIFIED**.
 
 ## ÖZET TABLO
 
-| Bölüm | Durum |
-|---|---|
-| 1. Veri bütünlüğü | **FAILED** (boş Order # veri kaybı) + UNVERIFIED (gerçek CSV yok) |
-| 2. API / kargo maliyeti | PASSED (mekanizma) + **FAILED** (store_id tek-sipariş öğrenme riski) + UNVERIFIED |
-| 2b. Tarih / Order # eşleştirme | **FAILED** (ay sınırı ×2, eşleşme oranı yok, sınıflandırma yok, kargolanmamış uyarısı yok, app.py:356) |
-| 3. Mağaza eşleştirme | PASSED (mekanizma) + WARNING (eşik 85<90) + UNVERIFIED (gerçek json yok) |
-| 4. Formüller / Excel | **PASSED** |
-| 5. Denetim modu | **PASSED** |
-| 6. Güvenlik / sağlamlık | **PASSED** (+2 WARNING) |
-| 7. Uçtan uca (gerçek Mayıs 2026) | **UNVERIFIED** (gerçek veri bu ortamda yok) |
+| Bölüm | İlk durum (ae61a41) | Güncel durum (düzeltme sonrası) |
+|---|---|---|
+| 1. Veri bütünlüğü | **FAILED** (boş Order # veri kaybı) + UNVERIFIED | **GİDERİLDİ** (FIX 2) + UNVERIFIED (gerçek CSV yok) |
+| 2. API / kargo maliyeti | PASSED (mekanizma) + **FAILED** (store_id riski) + UNVERIFIED | **GİDERİLDİ** (FIX 6) + UNVERIFIED |
+| 2b. Tarih / Order # eşleştirme | **FAILED** (ay sınırı ×2, oran/sınıflandırma/uyarı yok, app.py:356) | **GİDERİLDİ** (FIX 1, 3, 4, 5) |
+| 3. Mağaza eşleştirme | PASSED + WARNING (eşik 85<90) + UNVERIFIED | değişmedi (WARNING sürüyor) |
+| 4. Formüller / Excel | **PASSED** | PASSED (regresyon yok, yeniden doğrulandı) |
+| 5. Denetim modu | **PASSED** | PASSED |
+| 6. Güvenlik / sağlamlık | **PASSED** (+2 WARNING) | PASSED |
+| 7. Uçtan uca (gerçek Mayıs 2026) | **UNVERIFIED** | UNVERIFIED (gerçek veri hâlâ bu ortamda yok) |
 
 ## KARAR
 
-**Bu rapor ekiple paylaşılmaya hazır DEĞİLDİR — şu 6 madde düzeltilip gerçek Mayıs 2026
-verisiyle uçtan uca doğrulama yapılmadan paylaşmayın:** (1) kargo maliyetinin sipariş ayına
-atanması [2b.1], (2) önceki ay siparişlerinin maliyet sızıntısı [2b.2], (3) boş Order #
-veri kaybı [1.5], (4) Orders CSV'nin Order#→Store eşleşmesine katılması [app.py:356],
-(5) eşleşme oranı + eşleşmeyen sipariş sınıflandırması ve "henüz kargolanmadı" uyarısı
-[2b.4–2b.6], (6) store_id eşlemesinin tek siparişten kalıcılaştırılmaması [2.5].
+**İlk karar (ae61a41):** Bu rapor ekiple paylaşılmaya hazır DEĞİLDİR — şu 6 madde
+düzeltilmeden paylaşmayın: (1) kargo maliyetinin sipariş ayına atanması [2b.1],
+(2) önceki ay siparişlerinin maliyet sızıntısı [2b.2], (3) boş Order # veri kaybı [1.5],
+(4) Orders CSV'nin Order#→Store eşleşmesine katılması [app.py:356], (5) eşleşme oranı +
+eşleşmeyen sipariş sınıflandırması ve "henüz kargolanmadı" uyarısı [2b.4–2b.6],
+(6) store_id eşlemesinin tek siparişten kalıcılaştırılmaması [2.5].
+
+**Güncel karar:** 6 maddenin tamamı giderildi ve sentetik veri setiyle uçtan uca
+yeniden doğrulandı (69 kontrol, 0 hata; ayrıntı: DUZELTME_RAPORU.md). Uygulama,
+**gerçek Mayıs 2026 verisiyle bir kez uçtan uca koşulup eşleşme oranı ve
+"açıklanamayan" listesi temiz çıktıktan sonra** ekiple paylaşılmaya hazırdır.

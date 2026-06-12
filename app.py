@@ -200,6 +200,11 @@ def analiz():
                 uyarilar.append(
                     f"Orders CSV'de {ay_adi} {yil} dönemine ait satır yok "
                     "(tarih filtresini kontrol edin).")
+            for store, b in sorted(orders_sonuc["bos_order_no"].items()):
+                uyarilar.append(
+                    f"Order # eksik: {store or '(mağazasız)'} — {b['satir']} satır, "
+                    f"{b['ciro']:.2f}$ ciro. Her satır ayrı sipariş olarak sayıldı; "
+                    "export'u kontrol edin.")
         except shipstation_csv.CsvHata as e:
             uyarilar.append(f"Orders CSV işlenemedi: {e}")
     elif not ozet_sonuc:
@@ -343,6 +348,34 @@ def _ss_master_bazinda():
     return ss_veri, amazon_liste, sorted(set(eslesmeyen_ss))
 
 
+def _kargo_girdileri():
+    """API maliyet hesabının girdileri: Order#→Store (Orders ∪ Shipments,
+    çelişkiler uyarı olarak), ay sipariş kümesi, iptal listesi."""
+    a = DURUM["analiz"]
+    order_store, uyarilar = {}, []
+    ay_siparisleri, iptal_orderlar = {}, []
+    kaynak = a.get("orders") or a.get("ozet")
+    if kaynak:
+        ay_siparisleri = kaynak.get("siparisler") or {}
+        for ono, v in ay_siparisleri.items():
+            if v.get("store"):
+                order_store[ono] = v["store"]
+        iptal_orderlar = [x["order_no"] for x in kaynak.get("iptal_iade", [])
+                          if x.get("order_no")]
+    shipments_orderlari = set()
+    if a.get("shipments"):
+        shipments_orderlari = set(a["shipments"]["order_store"])
+        for ono, store in a["shipments"]["order_store"].items():
+            if ono in order_store and order_store[ono] != store:
+                uyarilar.append(
+                    f"Order # {ono}: Orders CSV mağazası '{order_store[ono]}' ile "
+                    f"Shipments CSV mağazası '{store}' çelişiyor; Orders CSV değeri "
+                    "kullanıldı, veriyi kontrol edin.")
+            else:
+                order_store.setdefault(ono, store)
+    return order_store, ay_siparisleri or None, iptal_orderlar, shipments_orderlari, uyarilar
+
+
 @app.route("/api/kargo/api", methods=["POST"])
 def kargo_api():
     a = DURUM["analiz"]
@@ -350,18 +383,49 @@ def kargo_api():
         return _hata("Önce analiz çalıştırın (ay + yıl seçip Analiz Et).")
     veri = request.get_json(silent=True) or {}
     yenile = bool(veri.get("yenile"))
-    order_store = {}
-    if a.get("shipments"):
-        order_store.update(a["shipments"]["order_store"])
-    # Orders CSV'deki Order# → Store da eşleşmeye katkı verir
+    order_store, ay_sip, iptal, ship_set, uyarilar = _kargo_girdileri()
     try:
         api = shipstation_api.ShipStationV2(os.environ.get("SHIPSTATION_API_KEY"))
         sonuc = shipstation_api.kargo_maliyeti_hesapla(
-            api, a["yil"], a["ay"], order_store, yenile=yenile)
+            api, a["yil"], a["ay"], order_store, ay_siparisleri=ay_sip,
+            iptal_orderlar=iptal, shipments_orderlari=ship_set, yenile=yenile)
     except shipstation_api.ApiHata as e:
         return _hata(str(e), 502)
     DURUM["kargo"] = sonuc
-    return jsonify({"tamam": True, "kaynak": "api", **sonuc})
+    return jsonify({"tamam": True, "kaynak": "api", "uyarilar": uyarilar, **sonuc})
+
+
+@app.route("/api/storeid/onayla", methods=["POST"])
+def storeid_onayla():
+    """Düşük güvenli store_id eşlemelerini kullanıcı onayıyla kalıcılaştırır."""
+    veri = request.get_json(silent=True) or {}
+    eslesmeler = veri.get("eslesmeler") or {}
+    if not isinstance(eslesmeler, dict) or not eslesmeler:
+        return _hata("Onaylanacak store_id eşlemesi yok.")
+    shipstation_api.store_id_sozlugu_kaydet(
+        {str(k): str(v) for k, v in eslesmeler.items()})
+    return jsonify({"tamam": True, "kayitli": len(eslesmeler)})
+
+
+@app.route("/api/storeid/yenile", methods=["POST"])
+def storeid_yenile():
+    """store_id sözlüğünü sıfırlayıp bu ayın verisinden yeniden öğrenir."""
+    a = DURUM["analiz"]
+    if not a:
+        return _hata("Önce analiz çalıştırın.")
+    if os.path.exists(shipstation_api.STORE_ID_DOSYASI):
+        os.remove(shipstation_api.STORE_ID_DOSYASI)
+    order_store, ay_sip, iptal, ship_set, uyarilar = _kargo_girdileri()
+    try:
+        api = shipstation_api.ShipStationV2(os.environ.get("SHIPSTATION_API_KEY"))
+        sonuc = shipstation_api.kargo_maliyeti_hesapla(
+            api, a["yil"], a["ay"], order_store, ay_siparisleri=ay_sip,
+            iptal_orderlar=iptal, shipments_orderlari=ship_set)
+    except shipstation_api.ApiHata as e:
+        return _hata(str(e), 502)
+    DURUM["kargo"] = sonuc
+    return jsonify({"tamam": True, "kaynak": "api", "uyarilar": uyarilar,
+                    "yeniden_ogrenildi": True, **sonuc})
 
 
 @app.route("/api/kargo/test", methods=["POST"])

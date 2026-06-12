@@ -109,43 +109,62 @@ def orders_isle(yol, ay, yil):
         if t and t.year == yil and t.month == ay:
             ay_satirlari.append((r, t))
 
-    # 1. geçiş: iptal/negatif siparişleri sipariş bazında tespit et
+    # 1. geçiş: iptal/negatif siparişleri sipariş bazında tespit et.
+    # Order # boş satırlar sipariş bazında değil SATIR bazında işaretlenir;
+    # aksi halde tek bir negatif boş satır tüm boş satırları düşürür.
     iptal_orderlar = set()
+    iptal_bos_satirlar = set()
     iptal_iade = []
-    for r, t in ay_satirlari:
+    for i, (r, t) in enumerate(ay_satirlari):
         ono = (alan(r, "order_no") or "").strip()
-        if ono in iptal_orderlar:
+        if ono and ono in iptal_orderlar:
             continue
         ot = sayi(alan(r, "order_total"), 0.0)
         ap = sayi(alan(r, "amount_paid"), 0.0)
         durum = (alan(r, "status") or "").strip().lower()
         if ot < 0 or ap < 0 or durum in ("cancelled", "canceled", "iptal"):
-            iptal_orderlar.add(ono)
+            if ono:
+                iptal_orderlar.add(ono)
+            else:
+                iptal_bos_satirlar.add(i)
             iptal_iade.append({
                 "order_no": ono, "store": (alan(r, "store") or "").strip(),
                 "tarih": t.strftime("%d.%m.%Y"),
                 "order_total": ot, "durum": durum or "negatif tutar"})
 
-    # 2. geçiş: toplama (iptaller tamamen hariç; sipariş alanları dedupe'lu)
+    # 2. geçiş: toplama (iptaller tamamen hariç; sipariş alanları dedupe'lu).
+    # Order # boş satırlar dedupe'a SOKULMAZ: iki boş satır aynı sipariş
+    # değildir; her biri ayrı sipariş gibi sayılır ve bos_order_no ile
+    # validasyona raporlanır (ciro düşmesin diye).
     magazalar = {}
     siparis_gorulen = {}   # order_no -> store (dedupe + çoklu store tespiti)
+    siparisler = {}        # order_no -> {store, ciro, tarih} (ay sipariş kümesi)
     coklu_store = set()
-    for r, t in ay_satirlari:
+    bos_order_no = {}      # store -> {satir, ciro}
+    for i, (r, t) in enumerate(ay_satirlari):
         store = (alan(r, "store") or "").strip()
         ono = (alan(r, "order_no") or "").strip()
-        if ono in iptal_orderlar:
+        if (ono and ono in iptal_orderlar) or i in iptal_bos_satirlar:
             continue
         m = magazalar.setdefault(store, {
             "ciro_order_total": 0.0, "ciro_amount_paid": 0.0, "vergi": 0.0,
             "kargo_musteri": 0.0, "adet": 0.0, "siparis_sayisi": 0})
         m["adet"] += sayi(alan(r, "quantity"), 0.0)
 
-        onceki = siparis_gorulen.get(ono)
-        if onceki is not None:
-            if onceki != store:
-                coklu_store.add(ono)
-            continue  # sipariş bazlı alanlar yalnızca ilk satırda sayılır
-        siparis_gorulen[ono] = store
+        if not ono:
+            b = bos_order_no.setdefault(store, {"satir": 0, "ciro": 0.0})
+            b["satir"] += 1
+            b["ciro"] += sayi(alan(r, "order_total"), 0.0)
+        else:
+            onceki = siparis_gorulen.get(ono)
+            if onceki is not None:
+                if onceki != store:
+                    coklu_store.add(ono)
+                continue  # sipariş bazlı alanlar yalnızca ilk satırda sayılır
+            siparis_gorulen[ono] = store
+            siparisler[ono] = {"store": store,
+                               "ciro": sayi(alan(r, "order_total"), 0.0),
+                               "tarih": t.strftime("%d.%m.%Y")}
         m["ciro_order_total"] += sayi(alan(r, "order_total"), 0.0)
         m["ciro_amount_paid"] += sayi(alan(r, "amount_paid"), 0.0)
         m["vergi"] += sayi(alan(r, "tax_paid"), 0.0)
@@ -167,6 +186,8 @@ def orders_isle(yol, ay, yil):
                 "Export'u tarih filtresiyle yeniden almayı değerlendirin.")
     return {
         "magazalar": magazalar,
+        "siparisler": siparisler,
+        "bos_order_no": bos_order_no,
         "iptal_iade": iptal_iade,
         "coklu_store": sorted(coklu_store),
         "kapsama": kapsama,
@@ -266,6 +287,7 @@ def ozet_isle(yol, ay, yil):
 
     magazalar = {}
     iptal_iade = []
+    siparisler = {}  # order_no -> {store, ciro} (ay sipariş kümesi)
     for r, t in ay_satirlari:
         store = (r.get(kmap["store"]) or "").strip()
         total = alan(r, "total")
@@ -289,6 +311,11 @@ def ozet_isle(yol, ay, yil):
         m["kargo_musteri"] += shp
         m["kargo_maliyet"] += alan(r, "kargo_maliyet")
         m["siparis_sayisi"] += 1
+        ono = (r.get(kmap["order_no"]) or "").strip()
+        if ono:  # tekrarlı Order # = bölünmüş gönderi → ciro toplanır
+            sp = siparisler.setdefault(ono, {"store": store, "ciro": 0.0,
+                                             "tarih": t.strftime("%d.%m.%Y")})
+            sp["ciro"] += total
 
     kapsama = {"ilk": None, "son": None, "uyari": None}
     if tum_tarihler:
@@ -301,7 +328,8 @@ def ozet_isle(yol, ay, yil):
                 f"Sipariş özeti raporu {ilk.strftime('%d.%m.%Y')} – "
                 f"{son.strftime('%d.%m.%Y')} aralığını kapsıyor; seçilen ay "
                 f"({ay:02d}/{yil}) tam kapsanmıyor olabilir.")
-    return {"magazalar": magazalar, "iptal_iade": iptal_iade,
+    return {"magazalar": magazalar, "siparisler": siparisler,
+            "iptal_iade": iptal_iade,
             "kapsama": kapsama, "ay_satir_sayisi": len(ay_satirlari),
             "toplam_satir": len(satirlar)}
 

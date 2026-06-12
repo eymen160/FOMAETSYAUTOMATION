@@ -56,10 +56,15 @@ servise gönderilmez (ShipStation API çağrıları hariç).
    sonraki aylarda otomatik kullanılır; yalnızca yeni mağazalar sorulur.
    Adında "Amazon" geçen mağazalar otomatik "Rapor Dışı (Amazon)" olur.
 5. **4) Kargo Maliyeti**: **API'den Kargo Maliyetini Çek** (ilk seferde
-   **Bağlantı Testi** önerilir). API yanıtları `cache/` klasörüne kaydedilir;
-   aynı ay tekrar hesaplanırken API'ye gidilmez. Güncel veri için
-   **Cache'i Yenile**. API çalışmazsa Cost kolonlu bir ShipStation raporu
-   yükleyip **CSV'den Hesapla** kullanın.
+   **Bağlantı Testi** önerilir). Maliyet **sipariş ayına** yazılır: label'lar
+   geniş pencereyle (ay başı −7 gün, ay sonu +45 gün) çekilip Order #
+   üzerinden ayın siparişlerine bağlanır; ay sonunda verilip sonraki ay
+   kargolanan siparişin maliyeti doğru aya girer. Eşleşme oranı, eşleşmeyen
+   siparişlerin sınıflandırması ve "henüz kargolanmamış" mağaza listesi
+   ekranda gösterilir. store_id → mağaza eşlemesi en az 3 sipariş kanıtıyla
+   kalıcılaşır; daha azı onayınıza sunulur. API yanıtları `cache/` klasörüne
+   kaydedilir; güncel veri için **Cache'i Yenile**. API çalışmazsa Cost
+   kolonlu bir ShipStation raporu yükleyip **CSV'den Hesapla** kullanın.
 6. **5) Denetim**: Form beyanı ile ShipStation gerçeği yan yana; %5+ sapma
    sarı, %15+ sapma kırmızı. Kolon bazında hangi kaynağın rapora gireceğini
    seçin (varsayılan ShipStation; Reklam ve İlave Ödeme her zaman formdan).

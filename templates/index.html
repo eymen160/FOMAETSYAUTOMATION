@@ -80,6 +80,7 @@ tr:nth-child(even) td{background:#fafafa}
     <button id="btn-api-test" class="ikincil">Bağlantı Testi</button>
     <button id="btn-api-cek">API'den Kargo Maliyetini Çek</button>
     <button id="btn-api-yenile" class="ikincil">Cache'i Yenile (API'ye tekrar git)</button>
+    <button id="btn-storeid-yenile" class="ikincil">store_id Eşlemelerini Sıfırla ve Yeniden Öğren</button>
   </div>
   <div class="satir" style="margin-top:10px">
     <div class="kutu" id="kutu-maliyet" data-tip="maliyet" style="max-width:420px"><b>Alternatif: Maliyet CSV'si</b><span>API çalışmazsa Cost/Shipment Cost kolonlu rapor — tıkla / sürükle</span></div>
@@ -237,6 +238,14 @@ async function kargoCek(yenile){
 }
 $("#btn-api-cek").addEventListener("click",()=>kargoCek(false));
 $("#btn-api-yenile").addEventListener("click",()=>kargoCek(true));
+$("#btn-storeid-yenile").addEventListener("click",async()=>{
+  if(!confirm("store_id_mapping.json silinip bu ayın verisinden yeniden öğrenilecek. Devam?"))return;
+  const j=await api("/api/storeid/yenile",{});
+  if(!j)return;
+  mesaj("store_id eşlemeleri sıfırlandı ve yeniden öğrenildi.","tamam");
+  kargoSonucGoster(j);
+  denetimYukle();
+});
 $("#btn-maliyet-csv").addEventListener("click",async()=>{
   const j=await api("/api/kargo/csv",{});
   if(!j)return;
@@ -247,13 +256,47 @@ function kargoSonucGoster(j){
   const adetler=Object.keys(j.magaza_kargo||{}).length;
   let h=`<div class="tamam">Kargo maliyeti hazır (${j.kaynak==="api"?"API":"CSV"}): ${adetler} mağaza.`;
   if(j.voided)h+=` ${j.voided} voided/iptal label hariç tutuldu.`;
+  if(j.ay_disi_label)h+=` ${j.ay_disi_label} label başka aya ait olduğu için bu aya yazılmadı.`;
   if(j.eslesmeyen&&j.eslesmeyen.adet)h+=` ⚠ ${j.eslesmeyen.adet} gönderi mağazayla eşleştirilemedi (${j.eslesmeyen.maliyet}$).`;
   h+="</div>";
+  (j.uyarilar||[]).forEach(u=>h+=`<div class="uyari">⚠ ${u}</div>`);
+  // Order # eşleşme oranı + sınıflandırma
+  const ist=j.istatistik;
+  if(ist){
+    const yuzde=(ist.oran*100).toFixed(1);
+    h+=`<div class="${ist.dusuk?"hata":"tamam"}">Order # eşleşme oranı: ${ist.eslesen}/${ist.toplam_siparis} (%${yuzde})${ist.dusuk?" — %97'nin altında, eşleşmeyen siparişleri kontrol edin!":""}</div>`;
+    const s=ist.siniflar||{};
+    const ozet=[["kargolanmamis","henüz kargolanmamış"],["iptal_iade","iptal/iade"],["format_anomalisi","Order # format anomalisi"],["aciklanamayan","AÇIKLANAMAYAN"]]
+      .filter(([k])=>(s[k]||[]).length)
+      .map(([k,e])=>`${e}: ${s[k].length}`).join(" · ");
+    if(ozet)h+=`<div class="uyari">Eşleşmeyen sipariş sınıflandırması — ${ozet}</div>`;
+    if((s.format_anomalisi||[]).length)
+      h+=`<div class="uyari">Format anomalisi (Order # biçim farkıyla eşleşiyor): ${s.format_anomalisi.slice(0,20).join(", ")}</div>`;
+    if((s.aciklanamayan||[]).length)
+      h+=`<div class="hata"><b>Açıklanamayan eşleşmeyen siparişler (gönderi kaydı var, label yok):</b> ${s.aciklanamayan.slice(0,20).join(", ")}${s.aciklanamayan.length>20?" …":""} — bu liste boşalmadan rapor paylaşılmamalı.</div>`;
+  }
+  // Henüz kargolanmamış siparişler (Kargo eksik kalabilir)
+  const km=j.kargolanmamis||{};
+  if(Object.keys(km).length){
+    h+=`<div class="uyari"><b>Henüz kargolanmamış siparişler — Kargo maliyeti eksik kalmış olabilir; birkaç gün sonra "Cache'i Yenile" ile tekrar çalıştırın:</b><br>${
+      Object.entries(km).map(([m,v])=>`${m}: ${v.adet} sipariş, ${num(v.ciro)}$ ciro`).join("<br>")}</div>`;
+  }
+  // Düşük güvenli store_id eşlemeleri (onay ister)
+  const dg=j.store_id_dusuk_guven||{};
+  if(Object.keys(dg).length){
+    h+=`<div class="uyari"><b>Düşük güvenli store_id eşlemeleri (3'ten az sipariş kanıtı — kalıcılaştırılmadı):</b><br>${
+      Object.entries(dg).map(([k,v])=>`store_id ${k} → "${v.magaza}" (${v.siparis_sayisi} sipariş) <button class="ikincil" onclick="storeIdOnayla('${k.replace(/'/g,"\\'")}','${String(v.magaza).replace(/'/g,"\\'")}')">Onayla</button>`).join("<br>")}</div>`;
+  }
+  (j.store_id_celiski||[]).forEach(u=>h+=`<div class="hata">⚠ ${u}</div>`);
   const bilinmeyen=j.bilinmeyen_store_idler||{};
   if(Object.keys(bilinmeyen).length){
     h+=`<div class="uyari">Bilinmeyen store_id'ler: ${Object.entries(bilinmeyen).map(([k,v])=>`${k} (${v.adet} gönderi)`).join(", ")} — Orders/Shipments CSV'lerinde bu siparişler yoksa eşleme yapılamaz.</div>`;
   }
   $("#kargo-sonuc").innerHTML=h;
+}
+async function storeIdOnayla(id,magaza){
+  const j=await api("/api/storeid/onayla",{eslesmeler:{[id]:magaza}});
+  if(j){mesaj(`store_id ${id} → "${magaza}" kalıcı olarak kaydedildi.`,"tamam");kargoCek(false);}
 }
 
 // ---- Denetim ----

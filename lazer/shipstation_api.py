@@ -2,7 +2,9 @@
 import calendar
 import json
 import os
+import re
 import time
+from datetime import datetime, timedelta
 
 import requests
 
@@ -88,17 +90,18 @@ class ShipStationV2:
         return veri
 
     def ay_labellari(self, yil, ay, yenile=False):
-        son_gun = calendar.monthrange(yil, ay)[1]
-        params = {"created_at_start": f"{yil}-{ay:02d}-01T00:00:00Z",
-                  "created_at_end": f"{yil}-{ay:02d}-{son_gun}T23:59:59Z"}
-        return self._cacheli("labels", yil, ay, yenile=yenile,
+        # Maliyet SİPARİŞ ayına yazılır; ay sonu siparişlerinin label'ı sonraki
+        # ayda kesilebildiğinden geniş pencereyle çekilir (ay başı −7 gün,
+        # ay sonu +45 gün) ve Order # üzerinden ay kümesine bağlanır.
+        bas, son = _genis_pencere(yil, ay)
+        params = {"created_at_start": bas, "created_at_end": son}
+        return self._cacheli("labels_genis", yil, ay, yenile=yenile,
                              uretici=lambda: self._sayfali_cek("/labels", "labels", params))
 
     def ay_shipmentlari(self, yil, ay, yenile=False):
-        son_gun = calendar.monthrange(yil, ay)[1]
-        params = {"created_at_start": f"{yil}-{ay:02d}-01T00:00:00Z",
-                  "created_at_end": f"{yil}-{ay:02d}-{son_gun}T23:59:59Z"}
-        return self._cacheli("shipments", yil, ay, yenile=yenile,
+        bas, son = _genis_pencere(yil, ay)
+        params = {"created_at_start": bas, "created_at_end": son}
+        return self._cacheli("shipments_genis", yil, ay, yenile=yenile,
                              uretici=lambda: self._sayfali_cek("/shipments", "shipments", params))
 
     def shipment_detay(self, shipment_id):
@@ -106,6 +109,25 @@ class ShipStationV2:
 
 
 # ---- Label işleme ------------------------------------------------------
+
+def _genis_pencere(yil, ay):
+    bas = datetime(yil, ay, 1) - timedelta(days=7)
+    son = datetime(yil, ay, calendar.monthrange(yil, ay)[1]) + timedelta(days=45)
+    return (bas.strftime("%Y-%m-%dT00:00:00Z"), son.strftime("%Y-%m-%dT23:59:59Z"))
+
+
+def order_no_norm(o):
+    """Order # karşılaştırma anahtarı: boşluk + Excel'in '12345.0' bozması."""
+    s = str(o or "").strip()
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    return s
+
+
+def _order_no_gevsek(o):
+    """Format anomalisi taraması için gevşek anahtar (büyük/küçük, -, boşluk)."""
+    return re.sub(r"[\s\-_#]+", "", order_no_norm(o)).casefold()
+
 
 def _tutar(obj):
     if isinstance(obj, dict):
@@ -161,13 +183,26 @@ def store_id_sozlugu_kaydet(sozluk, yol=STORE_ID_DOSYASI):
     return mevcut
 
 
-def kargo_maliyeti_hesapla(api, yil, ay, order_store, yenile=False):
-    """API'den ay label'larını çekip ShipStation mağaza adı bazında kargo
-    maliyetini hesaplar.
+STORE_ID_MIN_KANIT = 3  # store_id eşlemesi kalıcılaşmadan önce gereken sipariş
 
-    order_store: Order # → ShipStation Store adı (CSV'lerden).
-    Dönüş: {magaza_kargo, eslesmeyen_maliyet, voided, label_sayisi,
-            store_id_eslesme: {store_id: store_adi}, bilinmeyen_store_idler}
+
+def kargo_maliyeti_hesapla(api, yil, ay, order_store, ay_siparisleri=None,
+                           iptal_orderlar=None, shipments_orderlari=None,
+                           yenile=False):
+    """API label'larından ShipStation mağaza adı bazında kargo maliyeti.
+
+    order_store: Order # → ShipStation Store adı (Orders + Shipments CSV).
+    ay_siparisleri: Order # → {store, ciro} — seçili ayın iptalsiz sipariş
+      kümesi. Verilirse maliyet SİPARİŞ AYINA yazılır: yalnızca bu kümedeki
+      Order #'larla eşleşen label'lar sayılır (label hangi ayda kesilmiş
+      olursa olsun); eşleşme istatistiği, eşleşmeyen sipariş sınıflandırması
+      ve mağaza bazında "henüz kargolanmamış" listesi de döner.
+    iptal_orderlar: iptal/iade Order #'ları (sınıflandırma için).
+    shipments_orderlari: Shipments CSV'de gönderi kaydı olan Order #'lar.
+
+    Dönüş: {magaza_kargo, eslesmeyen, voided, label_sayisi, ay_disi_label,
+            istatistik, kargolanmamis, store_id_dusuk_guven, store_id_celiski,
+            yeni_store_id_eslesme, bilinmeyen_store_idler}
     """
     labels = api.ay_labellari(yil, ay, yenile=yenile)
     secilen, voided = labellari_isle(labels)
@@ -189,15 +224,31 @@ def kargo_maliyeti_hesapla(api, yil, ay, order_store, yenile=False):
         except ApiHata:
             shipment_store = {}  # shipments listesi alınamazsa label verisiyle devam
 
+    os_norm = {order_no_norm(k): v for k, v in (order_store or {}).items()
+               if order_no_norm(k)}
+    ay_set = None
+    if ay_siparisleri is not None:
+        ay_set = {order_no_norm(k) for k in ay_siparisleri if order_no_norm(k)}
+
     magaza_kargo = {}
     eslesmeyen = {"maliyet": 0.0, "adet": 0}
-    yeni_id_eslesme = {}
     bilinmeyen_idler = {}
+    kanit = {}            # store_id -> {magaza: {order_no}} (CSV kaynaklı kanıt)
+    eslesen_orderlar = set()
+    label_gevsek = set()  # format anomalisi taraması için gevşek anahtarlar
+    ay_disi_label = 0
+    sayilan = 0
     for sid, v in secilen.items():
         ek = shipment_store.get(sid, {})
-        order_no = str(v.get("order_no") or ek.get("order_no") or "").strip()
+        ono = order_no_norm(v.get("order_no") or ek.get("order_no") or "")
         store_id = str(v.get("store_id") or ek.get("store_id") or "")
-        magaza = order_store.get(order_no)
+        label_gevsek.add(_order_no_gevsek(ono))
+        if ay_set is not None and ono not in ay_set:
+            ay_disi_label += 1  # başka ayın siparişi: bu aya yazılmaz
+            continue
+        magaza = os_norm.get(ono)
+        if magaza is not None and store_id:
+            kanit.setdefault(store_id, {}).setdefault(magaza, set()).add(ono or sid)
         if magaza is None and store_id and store_id in id_sozluk:
             magaza = id_sozluk[store_id]
         if magaza is None:
@@ -208,17 +259,78 @@ def kargo_maliyeti_hesapla(api, yil, ay, order_store, yenile=False):
                 b["adet"] += 1
                 b["maliyet"] += v["maliyet"]
             continue
-        if store_id and store_id not in id_sozluk:
-            yeni_id_eslesme[store_id] = magaza
+        if ono:
+            eslesen_orderlar.add(ono)
         magaza_kargo[magaza] = magaza_kargo.get(magaza, 0.0) + v["maliyet"]
+        sayilan += 1
+
+    # store_id öğrenme: tek siparişlik kanıt kalıcılaşmaz, çelişki ezilmez
+    yeni_id_eslesme, dusuk_guven, celiskiler = {}, {}, []
+    for sid_, magazalar_k in kanit.items():
+        if len(magazalar_k) > 1:
+            celiskiler.append(
+                f"store_id {sid_} bu ay birden fazla mağazayla görüldü: "
+                + ", ".join(f"'{m}' ({len(s)} sipariş)"
+                            for m, s in sorted(magazalar_k.items()))
+                + " — otomatik eşleme yapılmadı, elle kontrol edin.")
+            continue
+        magaza, orderlar = next(iter(magazalar_k.items()))
+        if sid_ in id_sozluk:
+            if id_sozluk[sid_] != magaza:
+                celiskiler.append(
+                    f"store_id {sid_} kayıtlı eşlemesi '{id_sozluk[sid_]}' ama bu ay "
+                    f"{len(orderlar)} sipariş '{magaza}' gösteriyor — üzerine "
+                    "YAZILMADI; doğruysa eşlemeyi elle onaylayın.")
+            continue
+        if len(orderlar) >= STORE_ID_MIN_KANIT:
+            yeni_id_eslesme[sid_] = magaza
+        else:
+            dusuk_guven[sid_] = {"magaza": magaza, "siparis_sayisi": len(orderlar)}
     if yeni_id_eslesme:
         store_id_sozlugu_kaydet(yeni_id_eslesme)
+
+    # Eşleşme istatistiği + eşleşmeyen sipariş sınıflandırması + kargolanmamış
+    istatistik, kargolanmamis = None, {}
+    if ay_set is not None:
+        ham_map = {order_no_norm(k): k for k in ay_siparisleri}
+        ship_set = {order_no_norm(o) for o in (shipments_orderlari or [])}
+        siniflar = {"kargolanmamis": [], "format_anomalisi": [],
+                    "aciklanamayan": [],
+                    "iptal_iade": sorted({order_no_norm(o)
+                                          for o in (iptal_orderlar or [])})}
+        for ono in sorted(ay_set - eslesen_orderlar):
+            if _order_no_gevsek(ono) in label_gevsek:
+                siniflar["format_anomalisi"].append(ono)
+            elif ono not in ship_set:
+                siniflar["kargolanmamis"].append(ono)
+            else:
+                siniflar["aciklanamayan"].append(ono)
+        for ono in siniflar["kargolanmamis"]:
+            sp = ay_siparisleri.get(ham_map.get(ono, ono)) or {}
+            k = kargolanmamis.setdefault(sp.get("store") or "(mağazasız)",
+                                         {"adet": 0, "ciro": 0.0})
+            k["adet"] += 1
+            k["ciro"] += sp.get("ciro") or 0.0
+        toplam = len(ay_set)
+        eslesen = len(eslesen_orderlar & ay_set)
+        oran = (eslesen / toplam) if toplam else 1.0
+        istatistik = {"toplam_siparis": toplam, "eslesen": eslesen,
+                      "oran": round(oran, 4), "dusuk": oran < 0.97,
+                      "siniflar": siniflar}
+        kargolanmamis = {k: {"adet": v["adet"], "ciro": round(v["ciro"], 2)}
+                         for k, v in sorted(kargolanmamis.items())}
+
     return {
         "magaza_kargo": {k: round(v, 2) for k, v in magaza_kargo.items()},
         "eslesmeyen": {"maliyet": round(eslesmeyen["maliyet"], 2),
                        "adet": eslesmeyen["adet"]},
         "voided": voided,
-        "label_sayisi": len(secilen),
+        "label_sayisi": sayilan,
+        "ay_disi_label": ay_disi_label,
+        "istatistik": istatistik,
+        "kargolanmamis": kargolanmamis,
         "yeni_store_id_eslesme": yeni_id_eslesme,
+        "store_id_dusuk_guven": dusuk_guven,
+        "store_id_celiski": celiskiler,
         "bilinmeyen_store_idler": bilinmeyen_idler,
     }
