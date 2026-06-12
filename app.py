@@ -24,6 +24,7 @@ os.makedirs(CIKTI_KLASORU, exist_ok=True)
 DURUM = {
     "master_yolu": None,
     "orders_yolu": None,
+    "ozet_yolu": None,     # sipariş özeti raporu (maliyet dahil, sipariş bazlı)
     "shipments_yolu": None,
     "maliyet_csv_yolu": None,
     "analiz": None,        # son analiz sonucu (ay, yıl, kayıtlar, ss verisi…)
@@ -64,7 +65,9 @@ def _csv_otomatik_tani():
         except shipstation_csv.CsvHata:
             continue
         basliklar = set(satirlar[0].keys())
-        if "Order Total" in basliklar and DURUM["orders_yolu"] is None:
+        if "Amount - Order Total" in basliklar and DURUM["ozet_yolu"] is None:
+            DURUM["ozet_yolu"] = yol
+        elif "Order Total" in basliklar and DURUM["orders_yolu"] is None:
             DURUM["orders_yolu"] = yol
         elif "Shipment #" in basliklar and "Order Total" not in basliklar \
                 and DURUM["shipments_yolu"] is None:
@@ -89,7 +92,7 @@ def durum():
             return jsonify({"master": m, "master_hata": str(e)})
     return jsonify({
         "master": m,
-        "orders": _orders_bul(),
+        "orders": _orders_bul() or DURUM["ozet_yolu"],
         "shipments": _shipments_bul(),
         "maliyet_csv": DURUM["maliyet_csv_yolu"],
         "api_anahtari_var": bool(os.environ.get("SHIPSTATION_API_KEY")),
@@ -119,8 +122,13 @@ def yukle(tip):
             master.master_oku(yol)
             DURUM["master_yolu"] = yol
         elif tip == "orders":
-            shipstation_csv.orders_dogrula(yol)
-            DURUM["orders_yolu"] = yol
+            # Orders alanı iki formatı da kabul eder: item bazlı Orders
+            # export'u veya sipariş özeti raporu (maliyet kolonlu)
+            if shipstation_csv.ozet_format_mu(yol):
+                DURUM["ozet_yolu"] = yol
+            else:
+                shipstation_csv.orders_dogrula(yol)
+                DURUM["orders_yolu"] = yol
         elif tip == "shipments":
             shipstation_csv.shipments_isle(yol)
             DURUM["shipments_yolu"] = yol
@@ -157,8 +165,28 @@ def analiz():
 
     _csv_otomatik_tani()
     uyarilar = list(form_uyarilari)
-    orders_sonuc, shipments_sonuc = None, None
+    orders_sonuc, shipments_sonuc, ozet_sonuc = None, None, None
     o_yol, s_yol = _orders_bul(), _shipments_bul()
+    z_yol = DURUM["ozet_yolu"] if DURUM["ozet_yolu"] and os.path.exists(DURUM["ozet_yolu"]) else None
+    if z_yol:
+        try:
+            ozet_sonuc = shipstation_csv.ozet_isle(z_yol, ay, yil)
+            if ozet_sonuc["kapsama"].get("uyari"):
+                uyarilar.append(ozet_sonuc["kapsama"]["uyari"])
+            if ozet_sonuc["ay_satir_sayisi"] == 0:
+                uyarilar.append(f"Sipariş özeti raporunda {ay_adi} {yil} dönemine "
+                                "ait satır yok (tarih filtresini kontrol edin).")
+            else:
+                uyarilar.append(
+                    "Sipariş özeti raporu kullanılıyor: Ciro/Kargo Müşteri/Kargo "
+                    "maliyeti buradan hesaplanır. Bu raporda ürün adedi OLMADIĞI "
+                    "için PARÇA ADEDİ form beyanından (veya item bazlı Orders "
+                    "CSV'sinden) gelir. Form 'Vergi' beyanı Etsy kesintisidir; "
+                    "ShipStation'daki Order Tax (pazar yeri satış vergisi) ile "
+                    "birebir karşılaştırılamaz — VERGİ kolonu için kaynak olarak "
+                    "'Form' önerilir.")
+        except shipstation_csv.CsvHata as e:
+            uyarilar.append(f"Sipariş özeti raporu işlenemedi: {e}")
     if o_yol:
         try:
             orders_sonuc = shipstation_csv.orders_isle(o_yol, ay, yil)
@@ -174,9 +202,9 @@ def analiz():
                     "(tarih filtresini kontrol edin).")
         except shipstation_csv.CsvHata as e:
             uyarilar.append(f"Orders CSV işlenemedi: {e}")
-    else:
-        uyarilar.append("Orders CSV yüklenmedi: ShipStation gelir verisi "
-                        "(Ciro/Vergi/Kargo Müşteri/Parça Adedi) hesaplanamayacak.")
+    elif not ozet_sonuc:
+        uyarilar.append("Orders CSV / sipariş özeti raporu yüklenmedi: ShipStation "
+                        "gelir verisi (Ciro/Kargo Müşteri/Parça Adedi) hesaplanamayacak.")
     if s_yol:
         try:
             shipments_sonuc = shipstation_csv.shipments_isle(s_yol, ay, yil)
@@ -191,6 +219,8 @@ def analiz():
     ss_adlari = set()
     if orders_sonuc:
         ss_adlari |= set(orders_sonuc["magazalar"].keys())
+    if ozet_sonuc:
+        ss_adlari |= set(ozet_sonuc["magazalar"].keys())
     if shipments_sonuc:
         ss_adlari |= set(shipments_sonuc["gonderi_sayisi"].keys())
     master_adlari = [k["magaza"] for k in kayitlar]
@@ -201,8 +231,12 @@ def analiz():
         "ay": ay, "ay_adi": ay_adi.capitalize(), "yil": yil,
         "kayitlar": kayitlar, "bozuk": bozuk,
         "orders": orders_sonuc, "shipments": shipments_sonuc,
+        "ozet": ozet_sonuc,
         "master_yolu": m_yol,
     }
+    iptal = list(orders_sonuc["iptal_iade"]) if orders_sonuc else []
+    if ozet_sonuc:
+        iptal += ozet_sonuc["iptal_iade"]
     return jsonify({
         "ay": ay_adi.capitalize(), "yil": yil,
         "form_magaza_sayisi": len(kayitlar),
@@ -210,9 +244,10 @@ def analiz():
         "bozuk_satirlar": bozuk,
         "uyarilar": uyarilar,
         "eslestirme": oneriler,
-        "iptal_iade": orders_sonuc["iptal_iade"] if orders_sonuc else [],
-        "kapsama": orders_sonuc["kapsama"] if orders_sonuc else None,
+        "iptal_iade": iptal,
+        "kapsama": (ozet_sonuc or orders_sonuc or {}).get("kapsama"),
         "orders_var": orders_sonuc is not None,
+        "ozet_var": ozet_sonuc is not None,
         "shipments_var": shipments_sonuc is not None,
     })
 
@@ -228,45 +263,76 @@ def eslestirme_kaydet():
 
 
 def _ss_master_bazinda():
-    """Orders + kargo verisini master mağaza adına çevirip birleştirir."""
+    """ShipStation verilerini master mağaza adına çevirip birleştirir.
+
+    Öncelik: gelir + kargo maliyeti sipariş özeti raporundan; PARÇA ADEDİ
+    item bazlı Orders CSV'sinden; kargo maliyeti özet yoksa API/CSV'den."""
     a = DURUM["analiz"]
     eslesme = eslestirme.yukle()
     ss_veri = {}
     amazon = {}
     eslesmeyen_ss = []
-    if a.get("orders"):
-        for ss_ad, v in a["orders"]["magazalar"].items():
-            hedef = eslesme.get(ss_ad.strip())
-            if hedef is None and shipstation_csv.amazon_mu(ss_ad):
-                hedef = eslestirme.AMAZON_ETIKETI
+
+    def hedef_bul(ss_ad):
+        hedef = eslesme.get(ss_ad.strip())
+        if hedef is None and shipstation_csv.amazon_mu(ss_ad):
+            hedef = eslestirme.AMAZON_ETIKETI
+        return hedef
+
+    def hucre(hedef):
+        return ss_veri.setdefault(hedef, {
+            "ciro_order_total": None, "ciro_amount_paid": None,
+            "ciro_subtotal_shipping": None, "vergi": None,
+            "kargo_musteri": None, "adet": None, "kargo_api": None})
+
+    def ekle(h, alan, deger):
+        if deger is not None:
+            h[alan] = (h[alan] or 0.0) + deger
+
+    ozet = a.get("ozet")
+    if ozet:
+        for ss_ad, v in ozet["magazalar"].items():
+            hedef = hedef_bul(ss_ad)
             if hedef == eslestirme.AMAZON_ETIKETI:
                 am = amazon.setdefault(ss_ad.strip(), {"siparis": 0, "kargo": 0.0})
                 am["siparis"] += v["siparis_sayisi"]
+                am["kargo"] += v["kargo_maliyet"]
                 continue
             if hedef is None or hedef == "-":
                 eslesmeyen_ss.append(ss_ad.strip())
                 continue
-            h = ss_veri.setdefault(hedef, {
-                "ciro_order_total": 0.0, "ciro_amount_paid": 0.0, "vergi": 0.0,
-                "kargo_musteri": 0.0, "adet": 0.0, "kargo_api": None})
-            for alan in ("ciro_order_total", "ciro_amount_paid", "vergi",
-                         "kargo_musteri", "adet"):
-                h[alan] += v[alan]
-    if DURUM["kargo"]:
+            h = hucre(hedef)
+            for alan in ("ciro_order_total", "ciro_amount_paid",
+                         "ciro_subtotal_shipping", "vergi", "kargo_musteri"):
+                ekle(h, alan, v[alan])
+            ekle(h, "kargo_api", v["kargo_maliyet"])
+    if a.get("orders"):
+        for ss_ad, v in a["orders"]["magazalar"].items():
+            hedef = hedef_bul(ss_ad)
+            if hedef == eslestirme.AMAZON_ETIKETI:
+                if not ozet:
+                    am = amazon.setdefault(ss_ad.strip(), {"siparis": 0, "kargo": 0.0})
+                    am["siparis"] += v["siparis_sayisi"]
+                continue
+            if hedef is None or hedef == "-":
+                eslesmeyen_ss.append(ss_ad.strip())
+                continue
+            h = hucre(hedef)
+            ekle(h, "adet", v["adet"])  # adet yalnızca item bazlı export'ta doğru
+            if not ozet:  # gelir alanlarında özet raporu önceliklidir
+                for alan in ("ciro_order_total", "ciro_amount_paid", "vergi",
+                             "kargo_musteri"):
+                    ekle(h, alan, v[alan])
+    if DURUM["kargo"] and not ozet:
         for ss_ad, tutar in DURUM["kargo"]["magaza_kargo"].items():
-            hedef = eslesme.get(ss_ad.strip())
-            if hedef is None and shipstation_csv.amazon_mu(ss_ad):
-                hedef = eslestirme.AMAZON_ETIKETI
+            hedef = hedef_bul(ss_ad)
             if hedef == eslestirme.AMAZON_ETIKETI:
                 am = amazon.setdefault(ss_ad.strip(), {"siparis": 0, "kargo": 0.0})
                 am["kargo"] += tutar
                 continue
             if hedef is None or hedef == "-":
                 continue
-            h = ss_veri.setdefault(hedef, {
-                "ciro_order_total": 0.0, "ciro_amount_paid": 0.0, "vergi": 0.0,
-                "kargo_musteri": 0.0, "adet": 0.0, "kargo_api": None})
-            h["kargo_api"] = (h["kargo_api"] or 0.0) + tutar
+            ekle(hucre(hedef), "kargo_api", tutar)
     # Amazon gönderi sayıları (shipments CSV'den, sipariş sayısı yoksa)
     if a.get("shipments"):
         for ss_ad, adet in a["shipments"]["gonderi_sayisi"].items():
@@ -332,7 +398,8 @@ def denetim_gor():
     if not a:
         return _hata("Önce analiz çalıştırın.")
     veri = request.get_json(silent=True) or {}
-    ciro_kaynagi = veri.get("ciro_kaynagi") or "order_total"
+    ciro_kaynagi = veri.get("ciro_kaynagi") or (
+        "subtotal_shipping" if a.get("ozet") else "order_total")
     ss_veri, amazon_liste, eslesmeyen_ss = _ss_master_bazinda()
     tablo = denetim.denetim_tablosu(a["kayitlar"], ss_veri, ciro_kaynagi)
     kalibrasyon = denetim.ciro_kalibrasyonu(a["kayitlar"], ss_veri)
@@ -346,7 +413,7 @@ def denetim_gor():
         "eslesmeyen_shipstation": eslesmeyen_ss,
         "ss_var_form_yok": ss_var_form_yok,
         "form_var_ss_yok": form_var_ss_yok,
-        "kargo_hazir": DURUM["kargo"] is not None,
+        "kargo_hazir": DURUM["kargo"] is not None or a.get("ozet") is not None,
     })
 
 
@@ -357,15 +424,15 @@ def rapor_uret_endpoint():
         return _hata("Önce analiz çalıştırın.")
     veri = request.get_json(silent=True) or {}
     kaynaklar = veri.get("kaynaklar") or {}
-    ciro_kaynagi = veri.get("ciro_kaynagi") or "order_total"
+    ciro_kaynagi = veri.get("ciro_kaynagi") or (
+        "subtotal_shipping" if a.get("ozet") else "order_total")
     ss_veri, amazon_liste, _ = _ss_master_bazinda()
 
     satirlar = []
     for kayit in sorted(a["kayitlar"], key=lambda k: tr_kucuk(k["magaza"])):
         ss = ss_veri.get(kayit["magaza"]) or {}
         ss_degerler = {
-            "ciro": ss.get("ciro_amount_paid" if ciro_kaynagi == "amount_paid"
-                           else "ciro_order_total"),
+            "ciro": ss.get(f"ciro_{ciro_kaynagi}", ss.get("ciro_order_total")),
             "vergi": ss.get("vergi"),
             "kargo_musteri": ss.get("kargo_musteri"),
             "adet": ss.get("adet"),

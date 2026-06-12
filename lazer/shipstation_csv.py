@@ -208,6 +208,104 @@ def amazon_mu(store_adi):
     return "amazon" in tr_kucuk(store_adi)
 
 
+# --- Sipariş Özeti raporu (ShipStation Insights/Reports export'u) -----------
+# Sipariş bazlıdır ve kargo MALİYETİNİ de içerir. Tekrarlı Order # satırları
+# bölünmüş gönderilerdir ve tutarları farklıdır → toplanır (dedupe edilmez).
+OZET_KOLONLARI = {
+    "order_no": ["Order - Number"],
+    "order_date": ["Date - Order Date"],
+    "store": ["Market - Store Name"],
+    "marketplace": ["Market - Markeplace Name", "Market - Marketplace Name"],
+    "kargo_maliyet": ["Amount - Shipping Cost"],
+    "kargo_musteri": ["Amount - Order Shipping"],
+    "paid": ["Amount - Paid by Customer"],
+    "subtotal": ["Amount - Order Subtotal"],
+    "tax": ["Amount - Order Tax"],
+    "total": ["Amount - Order Total"],
+    "item_sayisi": ["Count - Number of Items"],
+}
+OZET_ZORUNLU = ["order_no", "order_date", "store", "subtotal", "total"]
+
+
+def ozet_format_mu(yol):
+    """Dosya sipariş özeti raporu mu? (başlığa bakarak hızlı kontrol)"""
+    try:
+        satirlar = _csv_oku(yol)
+    except CsvHata:
+        return False
+    basliklar = list(satirlar[0].keys())
+    return kolon_bul(basliklar, ["Amount - Order Total"], prefix=False) is not None
+
+
+def ozet_isle(yol, ay, yil):
+    """Sipariş özeti raporunu mağaza bazında işler.
+
+    Dönüş: magazalar {store: {ciro_subtotal_shipping, ciro_order_total,
+           ciro_amount_paid, vergi, kargo_musteri, kargo_maliyet,
+           siparis_sayisi}}, iptal_iade, kapsama, ay_satir_sayisi
+    """
+    satirlar = _csv_oku(yol)
+    basliklar = list(satirlar[0].keys())
+    kmap = {k: kolon_bul(basliklar, v, prefix=False) for k, v in OZET_KOLONLARI.items()}
+    eksik = [OZET_KOLONLARI[k][0] for k in OZET_ZORUNLU if kmap[k] is None]
+    if eksik:
+        raise CsvHata("Sipariş özeti raporunda şu kolonlar bulunamadı: "
+                      + ", ".join(eksik))
+
+    def alan(r, k, vars=0.0):
+        kol = kmap.get(k)
+        return sayi(r.get(kol), vars) if kol else vars
+
+    tum_tarihler, ay_satirlari = [], []
+    for r in satirlar:
+        t = _tarih(r.get(kmap["order_date"]))
+        if t:
+            tum_tarihler.append(t)
+        if t and t.year == yil and t.month == ay:
+            ay_satirlari.append((r, t))
+
+    magazalar = {}
+    iptal_iade = []
+    for r, t in ay_satirlari:
+        store = (r.get(kmap["store"]) or "").strip()
+        total = alan(r, "total")
+        paid = alan(r, "paid")
+        if total < 0 or paid < 0:
+            iptal_iade.append({
+                "order_no": (r.get(kmap["order_no"]) or "").strip(),
+                "store": store, "tarih": t.strftime("%d.%m.%Y"),
+                "order_total": total, "durum": "negatif tutar"})
+            continue
+        m = magazalar.setdefault(store, {
+            "ciro_subtotal_shipping": 0.0, "ciro_order_total": 0.0,
+            "ciro_amount_paid": 0.0, "vergi": 0.0, "kargo_musteri": 0.0,
+            "kargo_maliyet": 0.0, "adet": None, "siparis_sayisi": 0})
+        sub = alan(r, "subtotal")
+        shp = alan(r, "kargo_musteri")
+        m["ciro_subtotal_shipping"] += sub + shp
+        m["ciro_order_total"] += total
+        m["ciro_amount_paid"] += paid
+        m["vergi"] += alan(r, "tax")
+        m["kargo_musteri"] += shp
+        m["kargo_maliyet"] += alan(r, "kargo_maliyet")
+        m["siparis_sayisi"] += 1
+
+    kapsama = {"ilk": None, "son": None, "uyari": None}
+    if tum_tarihler:
+        ilk, son = min(tum_tarihler), max(tum_tarihler)
+        kapsama["ilk"] = ilk.strftime("%d.%m.%Y")
+        kapsama["son"] = son.strftime("%d.%m.%Y")
+        son_gun = calendar.monthrange(yil, ay)[1]
+        if ilk > datetime(yil, ay, 1) or son < datetime(yil, ay, son_gun):
+            kapsama["uyari"] = (
+                f"Sipariş özeti raporu {ilk.strftime('%d.%m.%Y')} – "
+                f"{son.strftime('%d.%m.%Y')} aralığını kapsıyor; seçilen ay "
+                f"({ay:02d}/{yil}) tam kapsanmıyor olabilir.")
+    return {"magazalar": magazalar, "iptal_iade": iptal_iade,
+            "kapsama": kapsama, "ay_satir_sayisi": len(ay_satirlari),
+            "toplam_satir": len(satirlar)}
+
+
 MALIYET_KOLONLARI = {
     "order_no": ["Order #", "Order Number"],
     "tracking": ["Tracking #", "Tracking Number"],

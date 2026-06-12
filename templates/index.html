@@ -52,7 +52,7 @@ tr:nth-child(even) td{background:#fafafa}
   <h2>1) Veri Dosyaları</h2>
   <div class="satir">
     <div class="kutu" id="kutu-master" data-tip="master"><b>Master Excel (.xlsx)</b><span>Klasördeki dosya otomatik kullanılır — değiştirmek için tıkla / sürükle</span></div>
-    <div class="kutu" id="kutu-orders" data-tip="orders"><b>ShipStation Orders CSV</b><span>Gelir verisi (Order Total, Tax Paid…) — tıkla / sürükle</span></div>
+    <div class="kutu" id="kutu-orders" data-tip="orders"><b>ShipStation Orders / Sipariş Özeti CSV</b><span>Gelir verisi: item bazlı Orders export'u VEYA maliyet kolonlu sipariş özeti raporu — tıkla / sürükle</span></div>
     <div class="kutu" id="kutu-shipments" data-tip="shipments"><b>ShipStation Shipments CSV</b><span>Order # ↔ Store eşleşmesi — tıkla / sürükle</span></div>
   </div>
   <input type="file" id="dosyasec" class="gizli">
@@ -272,10 +272,18 @@ function kaynakSecimCiz(){
   const c=document.createElement("span");c.className="secim";
   c.innerHTML=` <label><b>Ciro tanımı:</b>
     <select id="ciro-kaynagi">
+      <option value="subtotal_shipping">Subtotal + Kargo (vergisiz)</option>
       <option value="order_total">Order Total</option>
       <option value="amount_paid">Amount Paid</option>
     </select></label>`;
   k.appendChild(c);
+  if(sonAnaliz&&sonAnaliz.ozet_var){
+    // Özet raporu modunda: form 'Vergi'si Etsy kesintisi olduğundan SS satış
+    // vergisiyle değiştirilmemeli → varsayılanı Form yap
+    const v=k.querySelector('select[data-alan="vergi"]'); if(v)v.value="form";
+  }else{
+    $("#ciro-kaynagi").value="order_total";
+  }
   $("#ciro-kaynagi").addEventListener("change",denetimYukle);
 }
 
@@ -286,8 +294,10 @@ async function denetimYukle(){
   sonDenetim=j;
   // kalibrasyon
   const kal=j.kalibrasyon;let kh="";
+  const adEtiket={subtotal_shipping:"Subtotal + Kargo (vergisiz)",order_total:"Order Total",amount_paid:"Amount Paid"};
   if(kal&&kal.magaza_sayisi){
-    kh=`<div class="${kal.net?"tamam":"uyari"}">Ciro kalibrasyonu (${kal.magaza_sayisi} mağaza): form beyanına ort. sapma — Order Total: ${pct(kal.ort_sapma_order_total)}, Amount Paid: ${pct(kal.ort_sapma_amount_paid)}. ${kal.net?("Öneri: <b>"+(kal.oneri==="order_total"?"Order Total":"Amount Paid")+"</b>"):"Fark çok küçük; 'Ciro tanımı' seçimini kendiniz yapın."}</div>`;
+    const sap=Object.entries(kal.medyan_sapmalar||{}).filter(([,v])=>v!=null).map(([a,v])=>`${adEtiket[a]||a}: ${pct(v)}`).join(", ");
+    kh=`<div class="${kal.net?"tamam":"uyari"}">Ciro kalibrasyonu (${kal.magaza_sayisi} mağaza, medyan sapma): ${sap}. ${kal.net?("Öneri: <b>"+(adEtiket[kal.oneri]||kal.oneri)+"</b>"):"Fark küçük; 'Ciro tanımı' seçimini kendiniz yapın."}</div>`;
     if(kal.net&&$("#ciro-kaynagi")&&!$("#ciro-kaynagi").dataset.elle){$("#ciro-kaynagi").value=kal.oneri;}
   }
   $("#kalibrasyon").innerHTML=kh;
