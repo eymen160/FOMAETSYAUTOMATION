@@ -1,6 +1,7 @@
 # ShipStation CSV exportları: Orders (gelir) ve Shipments (Order# ↔ Store)
 import csv
 import calendar
+import re
 from datetime import datetime
 
 from .yardimci import kolon_bul, sayi, tr_kucuk
@@ -47,9 +48,16 @@ def _csv_oku(yol):
     raise CsvHata("CSV dosyası okunamadı (kodlama sorunu veya dosya boş).")
 
 
+def _magaza_temizle(ad):
+    """Mağaza adı normalizasyonu: baştaki/sondaki boşlukları at, içteki
+    tekrarlı boşlukları teke indir ('  A  B ' → 'A B')."""
+    return re.sub(r"\s+", " ", (ad or "").strip())
+
+
 def _tarih(s):
     s = (s or "").strip()
-    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m/%d/%Y %H:%M", "%m/%d/%Y %H:%M:%S"):
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d", "%m/%d/%Y %H:%M",
+                "%m/%d/%Y %H:%M:%S", "%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %I:%M %p"):
         try:
             return datetime.strptime(s, fmt)
         except ValueError:
@@ -229,9 +237,16 @@ def amazon_mu(store_adi):
     return "amazon" in tr_kucuk(store_adi)
 
 
-# --- Sipariş Özeti raporu (ShipStation Insights/Reports export'u) -----------
+# --- Sipariş Export'u (maliyet dahil, sipariş bazlı ShipStation export) ------
 # Sipariş bazlıdır ve kargo MALİYETİNİ de içerir. Tekrarlı Order # satırları
-# bölünmüş gönderilerdir ve tutarları farklıdır → toplanır (dedupe edilmez).
+# iki türlüdür: (a) GERÇEK kopya = aynı kargo maliyeti (yeniden içe aktarım),
+# (b) ÇOK GÖNDERİLİ = farklı kargo maliyeti (ayrı etiketler). Bu yüzden:
+#   • Gelir (Order Total/Tax/Order Shipping/Paid/Item) → sipariş başına BİR kez
+#     (drop_duplicates).
+#   • Kargo (Shipping Cost) → sipariş içindeki FARKLI maliyet değerlerinin
+#     toplamı, sonra mağaza bazında toplanır (gerçek kopyalar çift sayılmaz).
+#   • Aynı siparişin satırları farklı tarih taşıyorsa ay ataması için EN ERKEN
+#     tarih kullanılır.
 OZET_KOLONLARI = {
     "order_no": ["Order - Number"],
     "order_date": ["Date - Order Date"],
@@ -249,7 +264,8 @@ OZET_ZORUNLU = ["order_no", "order_date", "store", "subtotal", "total"]
 
 
 def ozet_format_mu(yol):
-    """Dosya sipariş özeti raporu mu? (başlığa bakarak hızlı kontrol)"""
+    """Dosya sipariş export'u mu? Başlıkta 'Order - Number' + 'Amount -
+    Shipping Cost' (ya da en azından 'Amount - Order Total') varsa evet."""
     try:
         satirlar = _csv_oku(yol)
     except CsvHata:
@@ -258,64 +274,133 @@ def ozet_format_mu(yol):
     return kolon_bul(basliklar, ["Amount - Order Total"], prefix=False) is not None
 
 
-def ozet_isle(yol, ay, yil):
-    """Sipariş özeti raporunu mağaza bazında işler.
+def _amazon_pazar_mi(marketplace, store):
+    """Pazar yeri AUTHORITATIVE: 'amazon'→True, 'etsy'→False; boş/bilinmiyorsa
+    mağaza adı sezgisine (fallback) düşülür."""
+    mp = tr_kucuk(marketplace)
+    if "amazon" in mp:
+        return True
+    if "etsy" in mp:
+        return False
+    return amazon_mu(store)
 
-    Dönüş: magazalar {store: {ciro_subtotal_shipping, ciro_order_total,
-           ciro_amount_paid, vergi, kargo_musteri, kargo_maliyet,
-           siparis_sayisi}}, iptal_iade, kapsama, ay_satir_sayisi
+
+def ozet_isle(yol, ay, yil):
+    """Maliyet dahil sipariş export'unu işler (onaylı dedupe + pazar yeri ayrımı).
+
+    Dönüş:
+      magazalar: {etsy_store: {ciro_subtotal_shipping, ciro_order_total,
+        ciro_amount_paid, vergi, kargo_musteri, kargo_maliyet, adet,
+        siparis_sayisi}}  (yalnızca Etsy — rapor gövdesi)
+      amazon: {store: {siparis, kargo}}  (Rapor Dışı)
+      siparisler, iptal_iade, iptal_magaza, bos_order_no, kapsama,
+      kargo_distinct_toplam, kargo_naive_toplam (dedupe kanıtı),
+      pazar_sayilari, benzersiz_siparis, ay_satir_sayisi, toplam_satir
     """
     satirlar = _csv_oku(yol)
     basliklar = list(satirlar[0].keys())
     kmap = {k: kolon_bul(basliklar, v, prefix=False) for k, v in OZET_KOLONLARI.items()}
     eksik = [OZET_KOLONLARI[k][0] for k in OZET_ZORUNLU if kmap[k] is None]
     if eksik:
-        raise CsvHata("Sipariş özeti raporunda şu kolonlar bulunamadı: "
+        raise CsvHata("Sipariş export'unda şu kolonlar bulunamadı: "
                       + ", ".join(eksik))
 
     def alan(r, k, vars=0.0):
         kol = kmap.get(k)
         return sayi(r.get(kol), vars) if kol else vars
 
-    tum_tarihler, ay_satirlari = [], []
+    # 1) Satırları Order # bazında grupla. Boş Order # satırları dedupe'a
+    #    girmez: her biri ayrı sözde-sipariş (ciro kaybını önlemek için).
+    gruplar = {}      # order_no -> [satır, ...]
+    bos_anahtarlar = set()
+    bos_i = 0
     for r in satirlar:
-        t = _tarih(r.get(kmap["order_date"]))
-        if t:
-            tum_tarihler.append(t)
-        if t and t.year == yil and t.month == ay:
-            ay_satirlari.append((r, t))
+        ono = (r.get(kmap["order_no"]) or "").strip()
+        if ono:
+            gruplar.setdefault(ono, []).append(r)
+        else:
+            bos_i += 1
+            anah = f"__bos__{bos_i}"
+            gruplar[anah] = [r]
+            bos_anahtarlar.add(anah)
 
-    magazalar = {}
-    iptal_iade = []
-    siparisler = {}  # order_no -> {store, ciro} (ay sipariş kümesi)
-    for r, t in ay_satirlari:
-        store = (r.get(kmap["store"]) or "").strip()
-        total = alan(r, "total")
-        paid = alan(r, "paid")
-        if total < 0 or paid < 0:
-            iptal_iade.append({
-                "order_no": (r.get(kmap["order_no"]) or "").strip(),
-                "store": store, "tarih": t.strftime("%d.%m.%Y"),
-                "order_total": total, "durum": "negatif tutar"})
+    magazalar, amazon = {}, {}
+    iptal_iade, iptal_magaza = [], {}
+    siparisler, bos_order_no = {}, {}
+    tum_tarihler = []
+    kargo_distinct_toplam = kargo_naive_toplam = 0.0
+    pazar_sayilari = {"etsy": 0, "amazon": 0}
+    benzersiz_siparis = 0
+    ay_siparis_sayisi = 0
+
+    for ono, rows in gruplar.items():
+        # Ay ataması: siparişin EN ERKEN tarihli satırı
+        tarihli = [(r, _tarih(r.get(kmap["order_date"]))) for r in rows]
+        tarihli = [(r, t) for r, t in tarihli if t]
+        if not tarihli:
             continue
+        for _, t in tarihli:
+            tum_tarihler.append(t)
+        rep, ilk_t = min(tarihli, key=lambda x: x[1])
+        benzersiz_siparis += 1
+        if ilk_t.year != yil or ilk_t.month != ay:
+            continue
+        ay_siparis_sayisi += 1
+
+        store = _magaza_temizle(rep.get(kmap["store"]))
+        total = alan(rep, "total")
+        paid = alan(rep, "paid")
+        # Kargo: sipariş içindeki FARKLI maliyet değerlerinin toplamı
+        maliyetler = {round(sayi(r.get(kmap["kargo_maliyet"]), 0.0), 2) for r in rows}
+        order_kargo = round(sum(maliyetler), 2)
+        naive_kargo = round(sum(round(sayi(r.get(kmap["kargo_maliyet"]), 0.0), 2)
+                                for r in rows), 2)
+
+        # İptal/iade şüphesi: negatif veya sıfır Order Total → gelirden hariç
+        if total < 0 or total == 0 or paid < 0:
+            iptal_iade.append({
+                "order_no": "" if ono in bos_anahtarlar else ono,
+                "store": store, "tarih": ilk_t.strftime("%d.%m.%Y"),
+                "order_total": total,
+                "durum": "negatif tutar" if total < 0 or paid < 0 else "sıfır tutar"})
+            iptal_magaza[store] = iptal_magaza.get(store, 0) + 1
+            continue
+
+        kargo_distinct_toplam += order_kargo
+        kargo_naive_toplam += naive_kargo
+
+        if _amazon_pazar_mi(rep.get(kmap["marketplace"]), store):
+            pazar_sayilari["amazon"] += 1
+            am = amazon.setdefault(store, {"siparis": 0, "kargo": 0.0})
+            am["siparis"] += 1
+            am["kargo"] += order_kargo
+            continue
+
+        pazar_sayilari["etsy"] += 1
         m = magazalar.setdefault(store, {
             "ciro_subtotal_shipping": 0.0, "ciro_order_total": 0.0,
             "ciro_amount_paid": 0.0, "vergi": 0.0, "kargo_musteri": 0.0,
-            "kargo_maliyet": 0.0, "adet": None, "siparis_sayisi": 0})
-        sub = alan(r, "subtotal")
-        shp = alan(r, "kargo_musteri")
+            "kargo_maliyet": 0.0, "adet": 0.0, "siparis_sayisi": 0})
+        sub = alan(rep, "subtotal")
+        shp = alan(rep, "kargo_musteri")
         m["ciro_subtotal_shipping"] += sub + shp
         m["ciro_order_total"] += total
         m["ciro_amount_paid"] += paid
-        m["vergi"] += alan(r, "tax")
+        m["vergi"] += alan(rep, "tax")
         m["kargo_musteri"] += shp
-        m["kargo_maliyet"] += alan(r, "kargo_maliyet")
+        m["kargo_maliyet"] += order_kargo
+        m["adet"] += alan(rep, "item_sayisi")
         m["siparis_sayisi"] += 1
-        ono = (r.get(kmap["order_no"]) or "").strip()
-        if ono:  # tekrarlı Order # = bölünmüş gönderi → ciro toplanır
-            sp = siparisler.setdefault(ono, {"store": store, "ciro": 0.0,
-                                             "tarih": t.strftime("%d.%m.%Y")})
-            sp["ciro"] += total
+        if ono in bos_anahtarlar:
+            b = bos_order_no.setdefault(store, {"satir": 0, "ciro": 0.0})
+            b["satir"] += 1
+            b["ciro"] += total
+        else:
+            siparisler[ono] = {"store": store, "ciro": total,
+                               "tarih": ilk_t.strftime("%d.%m.%Y")}
+
+    amazon = {k: {"siparis": v["siparis"], "kargo": round(v["kargo"], 2)}
+              for k, v in amazon.items()}
 
     kapsama = {"ilk": None, "son": None, "uyari": None}
     if tum_tarihler:
@@ -325,12 +410,17 @@ def ozet_isle(yol, ay, yil):
         son_gun = calendar.monthrange(yil, ay)[1]
         if ilk > datetime(yil, ay, 1) or son < datetime(yil, ay, son_gun):
             kapsama["uyari"] = (
-                f"Sipariş özeti raporu {ilk.strftime('%d.%m.%Y')} – "
+                f"Sipariş export'u {ilk.strftime('%d.%m.%Y')} – "
                 f"{son.strftime('%d.%m.%Y')} aralığını kapsıyor; seçilen ay "
                 f"({ay:02d}/{yil}) tam kapsanmıyor olabilir.")
-    return {"magazalar": magazalar, "siparisler": siparisler,
-            "iptal_iade": iptal_iade,
-            "kapsama": kapsama, "ay_satir_sayisi": len(ay_satirlari),
+    return {"magazalar": magazalar, "amazon": amazon, "siparisler": siparisler,
+            "iptal_iade": iptal_iade, "iptal_magaza": iptal_magaza,
+            "bos_order_no": bos_order_no, "kapsama": kapsama,
+            "kargo_distinct_toplam": round(kargo_distinct_toplam, 2),
+            "kargo_naive_toplam": round(kargo_naive_toplam, 2),
+            "pazar_sayilari": pazar_sayilari,
+            "benzersiz_siparis": benzersiz_siparis,
+            "ay_satir_sayisi": ay_siparis_sayisi,
             "toplam_satir": len(satirlar)}
 
 

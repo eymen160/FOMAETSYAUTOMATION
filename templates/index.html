@@ -162,7 +162,7 @@ footer .nokta{color:var(--cizgi)}
   <h2><span class="no">2</span>Veri Kaynakları</h2>
   <div class="satir">
     <div class="kutu" id="kutu-master" data-tip="master"><b>Master Excel (.xlsx)</b><span>Klasördeki dosya otomatik bulunur — değiştirmek için tıkla / sürükle</span></div>
-    <div class="kutu" id="kutu-orders" data-tip="orders"><b>ShipStation Orders / Sipariş Özeti CSV</b><span>Gelir verisi: item bazlı Orders export'u VEYA maliyet kolonlu sipariş özeti — tıkla / sürükle</span></div>
+    <div class="kutu" id="kutu-orders" data-tip="orders"><b>ShipStation Orders / Sipariş Export'u CSV</b><span>Gelir verisi: item bazlı Orders export'u VEYA <b>Sipariş Export'u (maliyet dahil)</b> — ikincisinde API çekimine gerek yok; tıkla / sürükle</span></div>
     <div class="kutu" id="kutu-shipments" data-tip="shipments"><b>ShipStation Shipments CSV</b><span>Order # ↔ Store eşleşmesi — tıkla / sürükle</span></div>
   </div>
   <input type="file" id="dosyasec" class="gizli">
@@ -507,10 +507,10 @@ function kaynakSecimCiz(){
       <option value="amount_paid">Amount Paid</option>
     </select></label>`;
   k.appendChild(c);
+  // Onaylı CİRO bağlaması Order Total'dır (her iki modda da varsayılan budur).
+  $("#ciro-kaynagi").value="order_total";
   if(sonAnaliz&&sonAnaliz.ozet_var){
     const v=k.querySelector('select[data-alan="vergi"]'); if(v)v.value="form";
-  }else{
-    $("#ciro-kaynagi").value="order_total";
   }
   $("#ciro-kaynagi").addEventListener("change",denetimYukle);
 }
@@ -586,7 +586,9 @@ function validasyonEk(j){
   const g={kritik:[...validasyonTaban.kritik],uyari:[...validasyonTaban.uyari],bilgi:[...validasyonTaban.bilgi]};
   if(j.form_var_ss_yok&&j.form_var_ss_yok.length)
     g.uyari.push(`Formu var, ShipStation verisi yok: ${j.form_var_ss_yok.join(", ")}`);
-  if(j.eslesmeyen_shipstation&&j.eslesmeyen_shipstation.length)
+  if(j.eslesmeyen_detay&&j.eslesmeyen_detay.length)
+    g.uyari.push(`ShipStation'da satış var, form yok (${j.eslesmeyen_detay.length} mağaza) — formu kovalayın: ${j.eslesmeyen_detay.map(d=>`${d.magaza||"(boş mağaza adı)"} (Ciro ${num(d.ciro)}${d.kargo?", Kargo "+num(d.kargo):""})`).join(" · ")}`);
+  else if(j.eslesmeyen_shipstation&&j.eslesmeyen_shipstation.length)
     g.uyari.push(`ShipStation'da var, master'a eşlenmemiş (formu doldurulmamış olabilir): ${j.eslesmeyen_shipstation.map(x=>x||"(boş mağaza adı)").join(", ")}`);
   if(j.amazon&&j.amazon.length)
     g.bilgi.push(`Rapor Dışı (Amazon): ${j.amazon.map(a=>`${a.magaza} (${a.siparis} sipariş, kargo ${num(a.kargo)})`).join(" · ")}`);

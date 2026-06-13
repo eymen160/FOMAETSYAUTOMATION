@@ -77,7 +77,7 @@ def oneri_uret(shipstation_adlari, master_adlari, mevcut=None):
             skorlar.append((puan, m))
         skorlar.sort(key=lambda t: t[0], reverse=True)
         adaylar = [{"master": m, "skor": p} for p, m in skorlar[:4] if p >= 45]
-        if skorlar and skorlar[0][0] >= 85:
+        if skorlar and skorlar[0][0] >= 90:  # <90 elle onay ister
             sonuc.append({"shipstation": ss, "durum": "oneri",
                           "master": skorlar[0][1], "skor": skorlar[0][0],
                           "adaylar": adaylar})
