@@ -1,0 +1,33 @@
+# Render Blueprint — Lazer Grubu Aylık Rapor uygulaması
+# Kalıcı diskli, tek örnekli (single instance) web servisi.
+#
+# Neden tek worker? Uygulama adımlar arası durumu (yüklenen dosyalar, analiz
+# sonucu, çekilen kargo) süreç-içi bellekte (DURUM) tutar. Birden fazla worker
+# olsaydı her isteğin farklı worker'a düşmesi bu durumu kaybettirirdi. Bu
+# yüzden tek worker + birden çok thread: tüm istekler aynı belleği paylaşır,
+# thread'ler uzun ShipStation API çekimi sırasında arayüzü kilitlemeden başka
+# isteklere yanıt verir. Kalıcı disk de zaten tek örnek gerektirir.
+services:
+  - type: web
+    name: lazer-grubu-rapor
+    runtime: python
+    plan: starter            # Kalıcı disk Starter ($7) ve üzeri planlarda var; Free planda disk yoktur.
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
+    autoDeploy: false
+    disk:
+      name: lazer-data
+      mountPath: /data       # DATA_DIR ile aynı olmalı.
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: DATA_DIR
+        value: /data          # Yazılabilir durum (mappings, cache, yüklenenler, raporlar) buraya gider.
+      - key: SHIPSTATION_API_KEY
+        sync: false           # Panelden girilir; repoya asla yazılmaz.
+      - key: APP_USERNAME
+        sync: false           # Giriş kullanıcı adı.
+      - key: APP_PASSWORD
+        sync: false           # Giriş parolası (zorunlu — bu olmadan üretim başlamaz).

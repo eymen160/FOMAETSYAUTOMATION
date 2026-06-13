@@ -1,0 +1,11 @@
+.env
+*.csv
+*.xlsx
+cache/
+yuklenen/
+cikti/
+data/
+__pycache__/
+*.pyc
+store_mapping.json
+store_id_mapping.json
