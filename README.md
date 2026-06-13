@@ -24,6 +24,71 @@ servise gönderilmez (ShipStation API çağrıları hariç).
    ```
    Tarayıcıda `http://127.0.0.1:5000` açılır.
 
+> **Lokal çalışma hiç değişmedi.** `DATA_DIR` ve `APP_PASSWORD` ortam
+> değişkenleri tanımlı olmadığında uygulama tam olarak eskisi gibi davranır:
+> dosyalar proje klasörüne yazılır ve giriş parolası sorulmaz (yalnızca
+> `127.0.0.1`'e bağlanılır). Aşağıdaki Render ayarları yalnızca sunucuya
+> kurulum içindir.
+
+## Sunucuya kurulum (Render — kalıcı diskli)
+
+Uygulama öğrendiği eşlemeleri (`store_mapping.json`, `store_id_mapping.json`)
+ve API cache'ini (`cache/`) diske yazar; bu durum aylar boyunca birikir. Bu
+yüzden **kalıcı diskli, kalıcı-sunucu** bir host gerekir — sunucusuz
+(serverless) platformlar bu dosyaları her çağrıda siler. Render bu iş için
+uygundur.
+
+Repoda hazır bir **`render.yaml`** Blueprint'i vardır; Render'da
+**New → Blueprint** ile repoyu bağladığınızda aşağıdaki ayarlar otomatik gelir.
+Elle kurmak isterseniz panelden şu değerleri girin:
+
+1. **Servis tipi:** Web Service · **Runtime:** Python · **Plan:** Starter ya
+   da üzeri. *(Kalıcı disk Free planda yoktur; Starter ve üzeri gerekir.)*
+2. **Build Command:** `pip install -r requirements.txt`
+3. **Start Command:**
+   ```
+   gunicorn app:app --workers 1 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
+   ```
+   > **Neden tek worker?** Uygulama adımlar arası durumu süreç-içi bellekte
+   > tutar; birden çok worker bu durumu bölerdi. Tek worker + 4 thread tüm
+   > istekleri aynı bellekte paylaştırır, uzun ShipStation çekimi sırasında
+   > arayüzü kilitlemez. `--timeout 300` uzun sayfalı API çekimleri içindir.
+4. **Kalıcı disk:** Ad `lazer-data`, **Mount Path `/data`**, boyut 1 GB.
+5. **Ortam değişkenleri** (panelde *Environment* sekmesi):
+
+   | Değişken | Değer | Not |
+   |---|---|---|
+   | `DATA_DIR` | `/data` | Disk mount yoluyla aynı olmalı; tüm yazılabilir durum buraya gider |
+   | `SHIPSTATION_API_KEY` | *(API anahtarınız)* | Yalnızca panelde; repoya asla yazılmaz |
+   | `APP_USERNAME` | *(giriş kullanıcı adı)* | Varsayılan `lazer` |
+   | `APP_PASSWORD` | *(güçlü parola)* | **Zorunlu** — bu olmadan üretimde uygulama başlamaz |
+
+   > `SHIPSTATION_API_KEY` üretimde panelden gelir; `.env` yalnızca lokal
+   > içindir ve `.gitignore`'dadır.
+
+### Erişim denetimi (kimlik doğrulama)
+
+Uygulama müşteri adlarını/adreslerini ve para dağıtım rakamlarını gösterdiği
+için **hiçbir sayfa, API ucu veya rapor indirme bağlantısı** kimlik doğrulaması
+olmadan açılmaz. Korumalı HTTP Basic Auth devrededir:
+
+- Üretimde `APP_USERNAME` / `APP_PASSWORD` ortam değişkenlerinden gelir.
+  Tarayıcı ilk girişte kullanıcı adı + parola sorar.
+- Render ortamında (otomatik `RENDER` değişkeniyle anlaşılır) `APP_PASSWORD`
+  tanımlı değilse uygulama **güvenli tarafta kalmak için başlamaz**.
+- Lokalde bu değişkenler tanımlı olmadığından parola sorulmaz (uygulama
+  yalnızca `127.0.0.1`'e bağlıdır).
+
+Parolayı değiştirmek için Render panelinden `APP_PASSWORD` değerini güncelleyip
+servisi yeniden başlatın.
+
+### Diskte ne saklanır?
+
+`/data` altında: `store_mapping.json`, `store_id_mapping.json`, `cache/`
+(aylık API yanıtları), `yuklenen/` (arayüzden yüklenen master/CSV'ler) ve
+`cikti/` (üretilen raporlar). Servis yeniden başlasa da bu durum korunur;
+öğrenilen eşlemeler ve cache kaybolmaz.
+
 ## ShipStation'dan export alma
 
 ### Orders export (gelir verisi)

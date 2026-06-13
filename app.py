@@ -1,13 +1,15 @@
 # Lazer Grubu ay sonu raporu otomasyonu — Flask uygulaması
 # Çalıştırma: python app.py  →  http://127.0.0.1:5000
 import glob
+import hmac
 import os
 import traceback
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, render_template, request, send_file
 
 from lazer import denetim, eslestirme, master, rapor, shipstation_api, shipstation_csv
+from lazer.config import veri_yolu
 from lazer.yardimci import AYLAR, ay_no, tr_kucuk
 
 load_dotenv()
@@ -15,10 +17,40 @@ load_dotenv()
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
-YUKLEME_KLASORU = "yuklenen"
-CIKTI_KLASORU = "cikti"
+YUKLEME_KLASORU = veri_yolu("yuklenen")
+CIKTI_KLASORU = veri_yolu("cikti")
 os.makedirs(YUKLEME_KLASORU, exist_ok=True)
 os.makedirs(CIKTI_KLASORU, exist_ok=True)
+
+# ---- Erişim denetimi (HTTP Basic Auth) -------------------------------------
+# Uygulama müşteri adlarını/adreslerini ve para dağıtım rakamlarını gösterir;
+# bu yüzden HİÇBİR route kimlik doğrulaması olmadan erişilebilir olmamalı.
+# Kimlik bilgileri ortam değişkenlerinden gelir (APP_USERNAME / APP_PASSWORD).
+# Lokal `python app.py` çalışmasını bozmamak için: kimlik bilgisi tanımlı
+# değilse kapı açıktır (yalnızca 127.0.0.1'e bağlanılır). Render gibi üretim
+# ortamında (RENDER ortam değişkeni otomatik ayarlanır) parola zorunludur;
+# tanımlı değilse uygulama güvenli tarafta kalmak için başlatılmaz.
+APP_USERNAME = os.environ.get("APP_USERNAME", "lazer")
+APP_PASSWORD = os.environ.get("APP_PASSWORD")
+
+if os.environ.get("RENDER") and not APP_PASSWORD:
+    raise RuntimeError(
+        "APP_PASSWORD ortam değişkeni ayarlanmadan üretimde çalıştırılamaz. "
+        "Render panelinden APP_USERNAME ve APP_PASSWORD değerlerini girin.")
+
+
+@app.before_request
+def _erisim_denetimi():
+    if not APP_PASSWORD:
+        return None  # lokal geliştirme: kimlik bilgisi tanımlı değil, kapı açık
+    auth = request.authorization
+    if (auth and auth.username and auth.password
+            and hmac.compare_digest(auth.username, APP_USERNAME)
+            and hmac.compare_digest(auth.password, APP_PASSWORD)):
+        return None
+    return Response(
+        "Bu uygulamaya erişim için kullanıcı adı ve parola gerekir.", 401,
+        {"WWW-Authenticate": 'Basic realm="Lazer Grubu Rapor"'})
 
 # Tek kullanıcılı lokal uygulama: durum bellekte tutulur
 DURUM = {

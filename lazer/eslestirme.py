@@ -7,8 +7,9 @@ from rapidfuzz import fuzz
 
 from .yardimci import tr_kucuk
 from .shipstation_csv import amazon_mu
+from .config import veri_yolu
 
-ESLESTIRME_DOSYASI = "store_mapping.json"
+ESLESTIRME_DOSYASI = veri_yolu("store_mapping.json")
 AMAZON_ETIKETI = "Rapor Dışı (Amazon)"
 
 # Mağaza adlarında ayırt edici olmayan kelimeler

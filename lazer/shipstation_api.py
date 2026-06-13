@@ -8,9 +8,11 @@ from datetime import datetime, timedelta
 
 import requests
 
+from .config import veri_yolu
+
 BASE = "https://api.shipstation.com/v2"
-CACHE_KLASORU = "cache"
-STORE_ID_DOSYASI = "store_id_mapping.json"
+CACHE_KLASORU = veri_yolu("cache")
+STORE_ID_DOSYASI = veri_yolu("store_id_mapping.json")
 
 
 class ApiHata(Exception):
