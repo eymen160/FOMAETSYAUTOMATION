@@ -74,7 +74,16 @@ def _master_bul():
         return DURUM["master_yolu"]
     adaylar = [y for y in glob.glob("*.xlsx")
                if not os.path.basename(y).startswith(("Lazer_Grubu_Rapor", "~$"))]
-    return adaylar[0] if adaylar else None
+    if adaylar:
+        return adaylar[0]
+    # .xlsx yoksa form CSV'si olabilir: master olarak doğrulananı seç
+    for y in glob.glob("*.csv"):
+        try:
+            master.master_oku(y)
+            return y
+        except master.MasterHata:
+            continue
+    return None
 
 
 def _orders_bul():
@@ -142,8 +151,8 @@ def yukle(tip):
     if not f or not f.filename:
         return _hata("Dosya seçilmedi.")
     uzanti = os.path.splitext(f.filename)[1].lower()
-    if tip == "master" and uzanti != ".xlsx":
-        return _hata("Master dosyası .xlsx olmalı.")
+    if tip == "master" and uzanti not in (".xlsx", ".csv"):
+        return _hata("Master dosyası .xlsx veya .csv olmalı.")
     if tip != "master" and uzanti != ".csv":
         return _hata("Bu alana .csv dosyası yükleyin.")
     yol = os.path.join(YUKLEME_KLASORU, f"{tip}{uzanti}")

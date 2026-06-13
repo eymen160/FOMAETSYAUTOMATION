@@ -161,7 +161,7 @@ footer .nokta{color:var(--cizgi)}
 <section class="kart" id="adim-2">
   <h2><span class="no">2</span>Veri Kaynakları</h2>
   <div class="satir">
-    <div class="kutu" id="kutu-master" data-tip="master"><b>Master Excel (.xlsx)</b><span>Klasördeki dosya otomatik bulunur — değiştirmek için tıkla / sürükle</span></div>
+    <div class="kutu" id="kutu-master" data-tip="master"><b>Master Form (.xlsx / .csv)</b><span>Excel ya da Google Form CSV dışa aktarımı — klasördeki dosya otomatik bulunur; değiştirmek için tıkla / sürükle</span></div>
     <div class="kutu" id="kutu-orders" data-tip="orders"><b>ShipStation Orders / Sipariş Export'u CSV</b><span>Gelir verisi: item bazlı Orders export'u VEYA <b>Sipariş Export'u (maliyet dahil)</b> — ikincisinde API çekimine gerek yok; tıkla / sürükle</span></div>
     <div class="kutu" id="kutu-shipments" data-tip="shipments"><b>ShipStation Shipments CSV</b><span>Order # ↔ Store eşleşmesi — tıkla / sürükle</span></div>
   </div>
@@ -295,7 +295,7 @@ async function api(yol,govde,yukMetin,yukDetay){
 
 /* ---- Dosya yükleme (tıkla + sürükle) ---- */
 document.querySelectorAll(".kutu").forEach(k=>{
-  k.addEventListener("click",()=>{aktifTip=k.dataset.tip;$("#dosyasec").accept=aktifTip==="master"?".xlsx":".csv";$("#dosyasec").click();});
+  k.addEventListener("click",()=>{aktifTip=k.dataset.tip;$("#dosyasec").accept=aktifTip==="master"?".xlsx,.csv":".csv";$("#dosyasec").click();});
   k.addEventListener("dragover",e=>{e.preventDefault();k.classList.add("surukle");});
   k.addEventListener("dragleave",()=>k.classList.remove("surukle"));
   k.addEventListener("drop",e=>{e.preventDefault();k.classList.remove("surukle");if(e.dataTransfer.files[0])dosyaYukle(k.dataset.tip,e.dataTransfer.files[0]);});

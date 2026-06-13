@@ -1,4 +1,6 @@
-# Master Excel (Google Form yanıtları) okuma
+# Master Excel / CSV (Google Form yanıtları) okuma
+import os
+
 import pandas as pd
 
 from .yardimci import kolon_bul, sayi, tr_kucuk, ek_odeme_coz
@@ -31,23 +33,38 @@ class MasterHata(Exception):
     pass
 
 
-def master_oku(yol):
-    """Master Excel'i okuyup kolonları çözümler. Dönüş: (DataFrame, kolon_map)."""
+def _master_df(yol):
+    """Master'ı DataFrame'e okur. .csv (Google Form'un CSV dışa aktarımı) ve
+    .xlsx kabul edilir; .xlsx'te 'Form Yanıtları 1' sayfası aranır."""
+    if os.path.splitext(yol)[1].lower() == ".csv":
+        for kodlama in ("utf-8-sig", "utf-8", "latin-1"):
+            try:
+                return pd.read_csv(yol, dtype=str, keep_default_na=False,
+                                   encoding=kodlama)
+            except UnicodeDecodeError:
+                continue
+        raise MasterHata("Master CSV okunamadı (kodlama sorunu).")
     try:
-        df = pd.read_excel(yol, sheet_name=SHEET_ADI)
+        return pd.read_excel(yol, sheet_name=SHEET_ADI)
     except ValueError:
         raise MasterHata(
             f"Master Excel'de '{SHEET_ADI}' sayfası bulunamadı. "
             "Doğru dosyayı yüklediğinizden emin olun.")
+
+
+def master_oku(yol):
+    """Master'ı (Excel veya CSV) okuyup kolonları çözümler.
+    Dönüş: (DataFrame, kolon_map)."""
+    df = _master_df(yol)
     basliklar = list(df.columns)
     kmap = {anahtar: kolon_bul(basliklar, adaylar)
             for anahtar, adaylar in KOLON_ADAYLARI.items()}
     if kmap["magaza_yeni"] is None and kmap["magaza_eski"] is None:
-        raise MasterHata("Master Excel'de 'Mağaza' kolonu bulunamadı.")
+        raise MasterHata("Master dosyasında 'Mağaza' kolonu bulunamadı.")
     eksik = [k for k in ZORUNLU if kmap[k] is None]
     if eksik:
         raise MasterHata(
-            "Master Excel'de şu kolonlar bulunamadı: "
+            "Master dosyasında şu kolonlar bulunamadı: "
             + ", ".join(KOLON_ADAYLARI[k][0] for k in eksik))
     return df, kmap
 
