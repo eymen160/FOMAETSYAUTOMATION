@@ -117,3 +117,54 @@ def donemler(df, kmap):
         if d and y:
             sonuc.add((str(d).strip().capitalize(), int(y)))
     return sorted(sonuc, key=lambda t: (t[1], t[0]))
+
+
+# Formdaki ürün adet kolonları (rapor sağ tarafına aynen taşınır).
+# Sıra spesifikasyondaki gibi korunur; başlık eşleştirme boşluk toleranslıdır.
+URUN_BASLIKLARI = [
+    "Lighter", "Water Bottle", "40 oz Tmblr", "20 oz Tmblr", "20 oz  Lether Tmblr",
+    "22oz Skin Tmblr", "Wine Tmblr", "Coffee Mug", "Passp.Hold", "Beverag.Hold",
+    "Wallet", "JewTravl Case", "Portfolio", "Zipper Portfolio", "Journal",
+    "SnapUpTray", "CheckBook", "PocketWatch", "Multi Knife", "Damasc.Knife",
+    "Olive Wood Knife", "Ornoment", "Wood Ornoment", "WineGlass", "WineGlass-SL",
+    "WhiskeyGlass", "ChampaFlute", "Glass Cofe-Mug",
+]
+
+
+def urun_kolonlarini_coz(df):
+    """Master başlıkları içinde ürün adet kolonlarını bulur.
+    Dönüş: [(görünen_ad, gerçek_kolon_adı)] — yalnızca bulunanlar."""
+    basliklar = list(df.columns)
+    cozulen = []
+    for ad in URUN_BASLIKLARI:
+        kol = kolon_bul(basliklar, [ad], prefix=False)
+        if kol is not None:
+            cozulen.append((ad.strip(), kol))
+    return cozulen
+
+
+def urun_adetleri(df, kmap, ay_adi, yil):
+    """Seçilen dönem için mağaza bazında ürün adetlerini döndürür.
+    Denetlenmiş finansal hesaba dokunmaz; yalnızca form beyanını okur.
+    Dönüş: (basliklar, {magaza: {ürün: adet}})."""
+    urun_kol = urun_kolonlarini_coz(df)
+    basliklar = [ad for ad, _ in urun_kol]
+    hedef_donem = tr_kucuk(ay_adi)
+    sonuc = {}
+    for _, satir in df.iterrows():
+        if tr_kucuk(_hucre(satir, kmap, "donem")) != hedef_donem:
+            continue
+        if sayi(_hucre(satir, kmap, "yil")) != float(yil):
+            continue
+        magaza = _hucre(satir, kmap, "magaza_yeni") or _hucre(satir, kmap, "magaza_eski")
+        if magaza is None:
+            continue
+        magaza = str(magaza).strip()
+        if not magaza:
+            continue
+        adetler = {}
+        for ad, kol in urun_kol:
+            v = sayi(satir.get(kol), 0.0) or 0.0
+            adetler[ad] = int(round(v))
+        sonuc[magaza] = adetler  # aynı mağazada son satır geçerli (form ile uyumlu)
+    return basliklar, sonuc

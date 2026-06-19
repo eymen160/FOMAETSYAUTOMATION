@@ -53,15 +53,21 @@ def _stil(ws, satir, kalin=False, dolgu=None):
 
 
 def rapor_uret(yol, ay_adi, yil, satirlar, amazon_satirlari=None,
-               eslesmeyen_maliyet=None):
+               eslesmeyen_maliyet=None, urun_basliklari=None):
     """satirlar: [{magaza, ciro, vergi, reklam, kargo_musteri, kargo,
-                   adet, ilave_odeme, upgrade}]"""
+                   adet, ilave_odeme, upgrade, urunler?}]
+    urun_basliklari verilirse rapor sağına ürün adet kolonları eklenir
+    (form beyanından; finansal kolonları/formülleri etkilemez)."""
+    urun_basliklari = urun_basliklari or []
+    son_fin = len(BASLIKLAR)  # son finansal kolon (Q = 17)
+    tum_basliklar = list(BASLIKLAR) + list(urun_basliklari)
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Rapor"
 
-    # Başlık satırı (turuncu şablon)
-    for k, ad in enumerate(BASLIKLAR, start=1):
+    # Başlık satırı (turuncu şablon) — finansal + ürün kolonları
+    for k, ad in enumerate(tum_basliklar, start=1):
         h = ws.cell(row=1, column=k, value=ad)
         h.fill = TURUNCU
         h.font = BEYAZ_KALIN
@@ -74,6 +80,8 @@ def rapor_uret(yol, ay_adi, yil, satirlar, amazon_satirlari=None,
     genislikler = [24, 11, 10, 10, 10, 12, 11, 11, 10, 4, 10, 10, 11, 9, 9, 11, 9]
     for k, g in enumerate(genislikler, start=1):
         ws.column_dimensions[get_column_letter(k)].width = g
+    for k in range(son_fin + 1, len(tum_basliklar) + 1):
+        ws.column_dimensions[get_column_letter(k)].width = 9
 
     # Ay bloğu başlığı
     r = 2
@@ -104,6 +112,12 @@ def rapor_uret(yol, ay_adi, yil, satirlar, amazon_satirlari=None,
         ws.cell(row=r, column=15, value=f'=IF(N(B{r})=0,"",D{r}/B{r})')
         ws.cell(row=r, column=16, value=_formul_bolme(f"M{r}", f"K{r}"))
         _stil(ws, r)
+        # Ürün adet kolonları (form beyanından, sağ tarafta)
+        urunler = s.get("urunler") or {}
+        for j, ad in enumerate(urun_basliklari):
+            c = ws.cell(row=r, column=son_fin + 1 + j, value=urunler.get(ad, 0))
+            c.border = KENARLIK
+            c.number_format = "#,##0"
         r += 1
     son_veri = r - 1
 
@@ -121,7 +135,20 @@ def rapor_uret(yol, ay_adi, yil, satirlar, amazon_satirlari=None,
         ws.cell(row=r, column=14, value=f'=IF(N(B{r})=0,"",E{r}/B{r})')
         ws.cell(row=r, column=15, value=f'=IF(N(B{r})=0,"",D{r}/B{r})')
         ws.cell(row=r, column=16, value=_formul_bolme(f"M{r}", f"K{r}"))
+        # Ürün kolonları toplamı
+        for j in range(len(urun_basliklari)):
+            harf = get_column_letter(son_fin + 1 + j)
+            c = ws.cell(row=r, column=son_fin + 1 + j,
+                        value=f"=SUM({harf}{ilk_veri}:{harf}{son_veri})")
+            c.number_format = "#,##0"
         _stil(ws, r, kalin=True, dolgu=ACIK_GRI)
+        # _stil yalnızca finansal kolonları gezdiği için ürün toplamlarına
+        # kenarlık/kalınlığı ayrıca uygula
+        for j in range(len(urun_basliklari)):
+            c = ws.cell(row=r, column=son_fin + 1 + j)
+            c.border = KENARLIK
+            c.font = KALIN
+            c.fill = ACIK_GRI
         r += 2
 
     # Rapor Dışı (Amazon) bölümü

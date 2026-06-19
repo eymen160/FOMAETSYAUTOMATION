@@ -1,0 +1,3 @@
+# Test bağımlılıkları (uygulamayı çalıştırmak için gerekmez)
+pytest>=8.0
+formulas>=1.2   # Excel formüllerini yeniden hesaplayıp doğrular

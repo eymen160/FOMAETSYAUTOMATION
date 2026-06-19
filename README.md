@@ -5,6 +5,21 @@ eşleştirip denetleyen ve ekibin ay sonu Excel raporunu otomatik üreten
 lokal web uygulaması. Tüm işlem bilgisayarınızda yapılır; veri hiçbir dış
 servise gönderilmez (ShipStation API çağrıları hariç).
 
+## Demo (sunum)
+
+Hızlı bir gösterim için açılış ekranındaki **"Demo verisini yükle"** butonuna
+basın. Paketlenmiş örnek veri (`demo/` klasörü: 10 mağaza, Mayıs 2026) tek
+tıkla yüklenir ve adımlı akış (Dönem → Veri → Eşleştirme → Denetim → Rapor)
+otomatik ilerler. 9 mağaza otomatik eşleşir, FTM inceleme vakası olarak
+işaretlenir. Her demo başlangıcında eşleştirme temiz baseline'a sıfırlanır
+(prova tekrarlanabilir). Demo verisinde müşteri adı/adresi yoktur.
+
+Testler:
+```
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
 ## Kurulum
 
 1. Python 3.11+ kurulu olmalı.

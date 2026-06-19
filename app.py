@@ -17,6 +17,11 @@ app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
 
 YUKLEME_KLASORU = "yuklenen"
 CIKTI_KLASORU = "cikti"
+DEMO_KLASORU = "demo"
+DEMO_MASTER = os.path.join(DEMO_KLASORU, "demo_master_form.xlsx")
+DEMO_OZET = os.path.join(DEMO_KLASORU, "demo_siparis_ozeti.csv")
+DEMO_ESLESTIRME = os.path.join(DEMO_KLASORU, "store_mapping.json")
+DEMO_AY, DEMO_YIL = "Mayıs", 2026
 os.makedirs(YUKLEME_KLASORU, exist_ok=True)
 os.makedirs(CIKTI_KLASORU, exist_ok=True)
 
@@ -30,6 +35,8 @@ DURUM = {
     "analiz": None,        # son analiz sonucu (ay, yıl, kayıtlar, ss verisi…)
     "kargo": None,         # API/CSV'den mağaza bazında kargo maliyeti
     "son_rapor": None,
+    "eslestirme_yolu": eslestirme.ESLESTIRME_DOSYASI,
+    "demo": False,
 }
 
 
@@ -59,6 +66,8 @@ def _shipments_bul():
 
 def _csv_otomatik_tani():
     """Klasördeki CSV'leri içeriğine göre orders/shipments olarak tanı."""
+    if DURUM["demo"]:
+        return  # demo modunda yalnızca paketlenmiş demo verisi kullanılır
     for yol in glob.glob("*.csv"):
         try:
             satirlar = shipstation_csv._csv_oku(yol)
@@ -77,6 +86,32 @@ def _csv_otomatik_tani():
 @app.route("/")
 def anasayfa():
     return render_template("index.html")
+
+
+@app.route("/api/demo", methods=["POST"])
+def demo_yukle():
+    """Demo verisini tek tıkla yükler: paketlenmiş master + sipariş özeti +
+    9 mağaza için hazır eşleştirme (FTM bilerek inceleme vakası)."""
+    if not (os.path.exists(DEMO_MASTER) and os.path.exists(DEMO_OZET)):
+        return _hata("Demo verisi bulunamadı. 'demo/' klasöründe "
+                     "demo_master_form.xlsx ve demo_siparis_ozeti.csv olmalı.")
+    # Eşleştirmeyi temiz baseline'a sıfırla (prova tekrarlanabilir olsun:
+    # FTM her zaman inceleme vakası olarak başlar)
+    baseline = os.path.join(DEMO_KLASORU, "store_mapping_baseline.json")
+    if os.path.exists(baseline):
+        import shutil
+        shutil.copyfile(baseline, DEMO_ESLESTIRME)
+    # Temiz başlangıç (önceki yüklemeler demo'yu etkilemesin)
+    DURUM.update({
+        "master_yolu": DEMO_MASTER, "ozet_yolu": DEMO_OZET,
+        "orders_yolu": None, "shipments_yolu": None, "maliyet_csv_yolu": None,
+        "kargo": None, "analiz": None, "son_rapor": None,
+        "eslestirme_yolu": DEMO_ESLESTIRME if os.path.exists(DEMO_ESLESTIRME)
+        else eslestirme.ESLESTIRME_DOSYASI,
+        "demo": True,
+    })
+    return jsonify({"tamam": True, "ay": DEMO_AY, "yil": DEMO_YIL,
+                    "master": DEMO_MASTER, "ozet": DEMO_OZET})
 
 
 @app.route("/api/durum")
@@ -99,6 +134,9 @@ def durum():
         "donemler": donem_listesi,
         "aylar": AYLAR,
         "kargo_hazir": DURUM["kargo"] is not None,
+        "demo": DURUM["demo"],
+        "demo_var": os.path.exists(DEMO_MASTER) and os.path.exists(DEMO_OZET),
+        "demo_ay": DEMO_AY, "demo_yil": DEMO_YIL,
     })
 
 
@@ -109,6 +147,11 @@ def yukle(tip):
     f = request.files.get("dosya")
     if not f or not f.filename:
         return _hata("Dosya seçilmedi.")
+    if DURUM["demo"]:  # elle dosya yükleme demo modundan çıkar
+        DURUM["demo"] = False
+        DURUM["eslestirme_yolu"] = eslestirme.ESLESTIRME_DOSYASI
+        DURUM["ozet_yolu"] = None
+        DURUM["master_yolu"] = None
     uzanti = os.path.splitext(f.filename)[1].lower()
     if tip == "master" and uzanti != ".xlsx":
         return _hata("Master dosyası .xlsx olmalı.")
@@ -158,6 +201,7 @@ def analiz():
     try:
         df, kmap = master.master_oku(m_yol)
         kayitlar, bozuk, form_uyarilari = master.ay_kayitlari(df, kmap, ay_adi, yil)
+        urun_basliklari, urun_adetleri = master.urun_adetleri(df, kmap, ay_adi, yil)
     except master.MasterHata as e:
         return _hata(str(e))
     if not kayitlar:
@@ -224,7 +268,7 @@ def analiz():
     if shipments_sonuc:
         ss_adlari |= set(shipments_sonuc["gonderi_sayisi"].keys())
     master_adlari = [k["magaza"] for k in kayitlar]
-    mevcut_eslesme = eslestirme.yukle()
+    mevcut_eslesme = eslestirme.yukle(DURUM["eslestirme_yolu"])
     oneriler = eslestirme.oneri_uret(ss_adlari, master_adlari, mevcut_eslesme)
 
     DURUM["analiz"] = {
@@ -232,6 +276,8 @@ def analiz():
         "kayitlar": kayitlar, "bozuk": bozuk,
         "orders": orders_sonuc, "shipments": shipments_sonuc,
         "ozet": ozet_sonuc,
+        "urun_basliklari": urun_basliklari,
+        "urun_adetleri": urun_adetleri,
         "master_yolu": m_yol,
     }
     iptal = list(orders_sonuc["iptal_iade"]) if orders_sonuc else []
@@ -258,7 +304,7 @@ def eslestirme_kaydet():
     eslesmeler = veri.get("eslesmeler") or {}
     if not isinstance(eslesmeler, dict):
         return _hata("Geçersiz eşleştirme verisi.")
-    eslestirme.kaydet(eslesmeler)
+    eslestirme.kaydet(eslesmeler, DURUM["eslestirme_yolu"])
     return jsonify({"tamam": True, "kayitli": len(eslesmeler)})
 
 
@@ -268,7 +314,7 @@ def _ss_master_bazinda():
     Öncelik: gelir + kargo maliyeti sipariş özeti raporundan; PARÇA ADEDİ
     item bazlı Orders CSV'sinden; kargo maliyeti özet yoksa API/CSV'den."""
     a = DURUM["analiz"]
-    eslesme = eslestirme.yukle()
+    eslesme = eslestirme.yukle(DURUM["eslestirme_yolu"])
     ss_veri = {}
     amazon = {}
     eslesmeyen_ss = []
@@ -417,17 +463,19 @@ def denetim_gor():
     })
 
 
-@app.route("/api/rapor", methods=["POST"])
-def rapor_uret_endpoint():
-    a = DURUM["analiz"]
-    if not a:
-        return _hata("Önce analiz çalıştırın.")
-    veri = request.get_json(silent=True) or {}
-    kaynaklar = veri.get("kaynaklar") or {}
-    ciro_kaynagi = veri.get("ciro_kaynagi") or (
-        "subtotal_shipping" if a.get("ozet") else "order_total")
-    ss_veri, amazon_liste, _ = _ss_master_bazinda()
+def _kaynak_varsayilan(a):
+    return "subtotal_shipping" if a.get("ozet") else "order_total"
 
+
+def _rapor_satirlari(kaynaklar, ciro_kaynagi):
+    """Rapor + ekran tablosu için ortak satır üretimi. Kaynak seçimini ve
+    ürün adetlerini (form beyanından) uygular. Dönüş: (satirlar, ss_veri,
+    amazon_liste, urun_basliklari, kaynak_kullanim)."""
+    a = DURUM["analiz"]
+    ss_veri, amazon_liste, _ = _ss_master_bazinda()
+    urun_basliklari = a.get("urun_basliklari") or []
+    urun_map = a.get("urun_adetleri") or {}
+    kaynak_kullanim = {}
     satirlar = []
     for kayit in sorted(a["kayitlar"], key=lambda k: tr_kucuk(k["magaza"])):
         ss = ss_veri.get(kayit["magaza"]) or {}
@@ -441,13 +489,29 @@ def rapor_uret_endpoint():
         satir = {"magaza": kayit["magaza"],
                  "reklam": kayit["reklam"],            # her zaman formdan
                  "ilave_odeme": kayit["ek_odeme"],     # her zaman formdan
-                 "upgrade": kayit["upgrade"]}
+                 "upgrade": kayit["upgrade"],
+                 "urunler": urun_map.get(kayit["magaza"], {})}
         for alan in ("ciro", "vergi", "kargo_musteri", "kargo", "adet"):
             secim = kaynaklar.get(alan, "shipstation")
             ss_d = ss_degerler.get(alan)
-            satir[alan] = kayit[alan] if (secim == "form" or ss_d is None) else ss_d
+            kullanilan = "form" if (secim == "form" or ss_d is None) else "shipstation"
+            satir[alan] = kayit[alan] if kullanilan == "form" else ss_d
+            kaynak_kullanim.setdefault(alan, kullanilan)
         satir["adet"] = int(round(satir["adet"] or 0))
         satirlar.append(satir)
+    return satirlar, ss_veri, amazon_liste, urun_basliklari, kaynak_kullanim
+
+
+@app.route("/api/rapor", methods=["POST"])
+def rapor_uret_endpoint():
+    a = DURUM["analiz"]
+    if not a:
+        return _hata("Önce analiz çalıştırın.")
+    veri = request.get_json(silent=True) or {}
+    kaynaklar = veri.get("kaynaklar") or {}
+    ciro_kaynagi = veri.get("ciro_kaynagi") or _kaynak_varsayilan(a)
+    satirlar, _, amazon_liste, urun_basliklari, _ = _rapor_satirlari(
+        kaynaklar, ciro_kaynagi)
 
     eslesmeyen = DURUM["kargo"]["eslesmeyen"] if DURUM["kargo"] else None
     dosya_adi = f"Lazer_Grubu_Rapor_{a['yil']}_{a['ay_adi'].upper()}.xlsx"
@@ -455,12 +519,89 @@ def rapor_uret_endpoint():
     try:
         rapor.rapor_uret(yol, a["ay_adi"], a["yil"], satirlar,
                          amazon_satirlari=amazon_liste,
-                         eslesmeyen_maliyet=eslesmeyen)
+                         eslesmeyen_maliyet=eslesmeyen,
+                         urun_basliklari=urun_basliklari)
     except PermissionError:
         return _hata(f"'{dosya_adi}' başka bir programda açık görünüyor; "
                      "kapatıp tekrar deneyin.")
     DURUM["son_rapor"] = yol
     return jsonify({"tamam": True, "dosya": dosya_adi})
+
+
+@app.route("/api/sonuc", methods=["POST"])
+def sonuc():
+    """Ekran için: nihai rapor tablosu (A→Q sayısal) + CEO özet kartları."""
+    a = DURUM["analiz"]
+    if not a:
+        return _hata("Önce analiz çalıştırın.")
+    veri = request.get_json(silent=True) or {}
+    kaynaklar = veri.get("kaynaklar") or {}
+    ciro_kaynagi = veri.get("ciro_kaynagi") or _kaynak_varsayilan(a)
+    satirlar, ss_veri, amazon_liste, urun_basliklari, kaynak_kullanim = \
+        _rapor_satirlari(kaynaklar, ciro_kaynagi)
+
+    # Ekran tablosu: finansal kolonları sayısal hesapla (Excel ile birebir)
+    tablo, toplam = [], {"ciro": 0.0, "vergi": 0.0, "reklam": 0.0,
+                         "kargo_musteri": 0.0, "kargo": 0.0, "adet": 0,
+                         "ilave_odeme": 0.0, "kalan": 0.0, "upgrade": 0}
+    for s in satirlar:
+        ciro = s["ciro"] or 0.0
+        adet = s["adet"] or 0
+        kalan = ciro - (s["vergi"] or 0) - (s["reklam"] or 0) - (s["kargo"] or 0)
+        satir = {
+            "magaza": s["magaza"], "ciro": ciro,
+            "pb_ciro": ciro / adet if adet else None,
+            "vergi": s["vergi"] or 0, "reklam": s["reklam"] or 0,
+            "kargo_musteri": s["kargo_musteri"] or 0,
+            "kargo_pb_odenen": (s["kargo_musteri"] or 0) / adet if adet else None,
+            "kargo_pb_kalan": ((s["kargo_musteri"] or 0) - (s["kargo"] or 0)) / adet if adet else None,
+            "kargo": s["kargo"] or 0, "adet": adet,
+            "ilave_odeme": s["ilave_odeme"] or 0, "kalan": kalan,
+            "yuzde_reklam": (s["reklam"] or 0) / ciro if ciro else None,
+            "yuzde_vergi": (s["vergi"] or 0) / ciro if ciro else None,
+            "pb_kalan": kalan / adet if adet else None,
+            "upgrade": s["upgrade"] or 0,
+        }
+        tablo.append(satir)
+        for k in ("ciro", "vergi", "reklam", "kargo_musteri", "kargo",
+                  "ilave_odeme", "upgrade"):
+            toplam[k] += s[k] or 0
+        toplam["adet"] += adet
+        toplam["kalan"] += kalan
+
+    # CEO özet kartları
+    ozet = a.get("ozet")
+    islenen_siparis = 0
+    if ozet:
+        islenen_siparis = sum(v["siparis_sayisi"] for v in ozet["magazalar"].values())
+    eslesen = len([s for s in tablo if (ss_veri.get(s["magaza"]) or {})])
+    toplam_magaza = len(tablo)
+    # Otomatik (ShipStation'dan) vs manuel (formdan) kolon sayısı
+    finansal_alanlar = ["ciro", "vergi", "kargo_musteri", "kargo", "adet"]
+    oto = sum(1 for f in finansal_alanlar if kaynak_kullanim.get(f) == "shipstation")
+    manuel = len(finansal_alanlar) - oto + 2  # +REKLAM +İLAVE ÖDEME (hep form)
+    ceo = {
+        "islenen_siparis": islenen_siparis,
+        "toplam_ciro": round(toplam["ciro"]),
+        "toplam_kargo": round(toplam["kargo"]),
+        "toplam_kalan": round(toplam["kalan"]),
+        "eslesen_magaza": eslesen,
+        "toplam_magaza": toplam_magaza,
+        "match_rate": round(100 * eslesen / toplam_magaza) if toplam_magaza else 0,
+        "otomatik_kolon": oto,
+        "manuel_kolon": manuel,
+        "amazon_siparis": sum(x.get("siparis", 0) for x in amazon_liste),
+        "zaman_tasarrufu": "~20 saat/ay manuel iş → dakikalar",
+    }
+    return jsonify({
+        "ay": a["ay_adi"], "yil": a["yil"],
+        "tablo": tablo, "toplam": {**toplam,
+            "yuzde_reklam": toplam["reklam"] / toplam["ciro"] if toplam["ciro"] else None,
+            "yuzde_vergi": toplam["vergi"] / toplam["ciro"] if toplam["ciro"] else None},
+        "ceo": ceo,
+        "urun_basliklari": urun_basliklari,
+        "amazon": amazon_liste,
+    })
 
 
 @app.route("/api/rapor/indir")

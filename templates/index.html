@@ -2,125 +2,245 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<title>Lazer Grubu — Ay Sonu Raporu Otomasyonu</title>
+<title>Lazer Grubu — Aylık Rapor Otomasyonu</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-:root{--turuncu:#f90;--koyu:#1f2937;--gri:#6b7280;--cizgi:#e5e7eb}
+:root{
+  --accent:#ea7a0c; --accent-soft:#fff4e8; --accent-dark:#b75e06;
+  --ink:#1f2430; --gri:#6b7280; --gri-acik:#9ca3af;
+  --cizgi:#e6e8ec; --zemin:#f4f5f7; --kart:#ffffff;
+  --sari:#fef3c7; --sari-ink:#92600a; --kirmizi:#fde2e1; --kirmizi-ink:#b42318;
+  --yesil:#e7f6ec; --yesil-ink:#15803d;
+}
 *{box-sizing:border-box}
-body{font-family:system-ui,Segoe UI,Arial,sans-serif;margin:0;background:#f6f7f9;color:var(--koyu)}
-header{background:var(--turuncu);color:#fff;padding:14px 24px;font-size:20px;font-weight:700}
-main{max-width:1280px;margin:0 auto;padding:18px}
-section{background:#fff;border:1px solid var(--cizgi);border-radius:10px;padding:16px 18px;margin-bottom:16px}
-h2{font-size:15px;margin:0 0 12px;border-left:4px solid var(--turuncu);padding-left:8px}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  background:var(--zemin);color:var(--ink);font-size:15px;line-height:1.5}
+button{font-family:inherit;cursor:pointer;border:0;border-radius:10px;font-weight:600;font-size:15px}
+.acc{background:var(--accent);color:#fff;padding:12px 22px;transition:background .15s}
+.acc:hover{background:var(--accent-dark)}
+.acc:disabled{background:var(--gri-acik);cursor:not-allowed}
+.ghost{background:#fff;color:var(--ink);border:1px solid var(--cizgi);padding:10px 18px}
+.ghost:hover{border-color:var(--gri-acik)}
+.link{background:none;color:var(--accent-dark);padding:6px;font-weight:600;text-decoration:underline}
+select,input{padding:10px 12px;border:1px solid var(--cizgi);border-radius:10px;font-size:15px;background:#fff;color:var(--ink)}
+a{color:var(--accent-dark)}
+
+/* ---- üst bar ---- */
+header{background:#fff;border-bottom:1px solid var(--cizgi);padding:14px 28px;display:flex;align-items:center;gap:12px}
+header .logo{width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
+header b{font-size:16px}
+header .alt{color:var(--gri);font-size:13px;margin-left:auto}
+
+/* ---- landing ---- */
+#landing{min-height:calc(100vh - 60px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px}
+#landing .badge{background:var(--accent-soft);color:var(--accent-dark);padding:6px 14px;border-radius:999px;font-weight:600;font-size:13px;margin-bottom:24px}
+#landing h1{font-size:46px;margin:0 0 14px;letter-spacing:-1px;max-width:14ch}
+#landing p.deger{font-size:22px;color:var(--gri);margin:0 0 36px}
+#landing p.deger b{color:var(--ink)}
+#landing .cta{display:flex;gap:14px;align-items:center;flex-direction:column}
+#landing .cta button.acc{font-size:18px;padding:16px 34px;border-radius:12px}
+#landing .mini{display:flex;gap:30px;margin-top:48px;color:var(--gri);font-size:14px;flex-wrap:wrap;justify-content:center}
+#landing .mini div b{display:block;color:var(--ink);font-size:24px}
+
+/* ---- app gövde ---- */
+#app{display:none;max-width:1500px;margin:0 auto;padding:22px 28px 80px}
+
+/* stepper */
+.stepper{display:flex;gap:6px;margin:6px 0 22px;background:#fff;border:1px solid var(--cizgi);border-radius:14px;padding:8px}
+.stepper .st{flex:1;display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;color:var(--gri-acik);font-weight:600;cursor:pointer}
+.stepper .st .n{width:26px;height:26px;border-radius:50%;background:var(--zemin);color:var(--gri);display:flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto}
+.stepper .st.aktif{background:var(--accent-soft);color:var(--accent-dark)}
+.stepper .st.aktif .n{background:var(--accent);color:#fff}
+.stepper .st.tamam{color:var(--ink)}
+.stepper .st.tamam .n{background:var(--yesil);color:var(--yesil-ink)}
+
+section.panel{background:var(--kart);border:1px solid var(--cizgi);border-radius:14px;padding:22px 24px;margin-bottom:18px;display:none}
+section.panel.aktif{display:block}
+h2{font-size:18px;margin:0 0 4px}
+.alt2{color:var(--gri);font-size:14px;margin:0 0 18px}
+
 .satir{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
-.kutu{border:2px dashed #cbd5e1;border-radius:8px;padding:10px 12px;flex:1;min-width:220px;text-align:center;font-size:13px;color:var(--gri);cursor:pointer;background:#fafafa}
-.kutu.dolu{border-color:#16a34a;color:#166534;background:#f0fdf4}
-.kutu.surukle{border-color:var(--turuncu);background:#fff7ed}
-.kutu b{display:block;color:var(--koyu);margin-bottom:3px}
-button{background:var(--turuncu);border:0;color:#fff;font-weight:600;padding:9px 16px;border-radius:7px;cursor:pointer;font-size:14px}
-button.ikincil{background:#fff;color:var(--koyu);border:1px solid #cbd5e1}
-button:disabled{opacity:.45;cursor:not-allowed}
-select,input{padding:8px;border:1px solid #cbd5e1;border-radius:7px;font-size:14px}
-table{border-collapse:collapse;width:100%;font-size:13px}
-th{background:var(--turuncu);color:#fff;padding:7px 8px;text-align:left;white-space:nowrap}
-td{border-bottom:1px solid var(--cizgi);padding:6px 8px}
-tr:nth-child(even) td{background:#fafafa}
-.sari{background:#fef9c3!important}
-.kirmizi{background:#fecaca!important}
-.yesil-nokta{color:#16a34a}
-.uyari{background:#fff7ed;border:1px solid #fdba74;border-radius:7px;padding:8px 12px;margin:6px 0;font-size:13px}
-.hata{background:#fef2f2;border:1px solid #fca5a5;border-radius:7px;padding:8px 12px;margin:6px 0;font-size:13px;color:#991b1b}
-.tamam{background:#f0fdf4;border:1px solid #86efac;border-radius:7px;padding:8px 12px;margin:6px 0;font-size:13px;color:#166534}
-.rozet{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;background:#e5e7eb;margin-left:6px}
-.rozet.iyi{background:#dcfce7;color:#166534}
-.rozet.kotu{background:#fee2e2;color:#991b1b}
-.sag{text-align:right}
+.aksiyon{margin-top:20px;display:flex;gap:12px;align-items:center}
+
+/* CEO kartları */
+.kartlar{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:8px}
+.kart{background:#fff;border:1px solid var(--cizgi);border-radius:14px;padding:18px 20px}
+.kart .k{color:var(--gri);font-size:13px;font-weight:600;margin-bottom:8px}
+.kart .v{font-size:30px;font-weight:800;letter-spacing:-.5px}
+.kart .s{color:var(--gri-acik);font-size:13px;margin-top:4px}
+.kart.vurgu{background:var(--accent);border-color:var(--accent)}
+.kart.vurgu .k{color:#ffe7cf}
+.kart.vurgu .v,.kart.vurgu .s{color:#fff}
+.serit{background:var(--accent-soft);border:1px solid #f6d9b8;color:var(--accent-dark);border-radius:12px;padding:14px 18px;font-weight:600;margin:14px 0 0;display:flex;align-items:center;gap:10px}
+
+/* tablolar */
+.tablosar{overflow-x:auto;border:1px solid var(--cizgi);border-radius:12px;margin-top:8px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th{background:var(--accent);color:#fff;padding:10px 10px;text-align:right;white-space:nowrap;font-weight:600;position:sticky;top:0}
+th:first-child,td:first-child{text-align:left;position:sticky;left:0}
+th:first-child{z-index:2}
+td{border-bottom:1px solid var(--cizgi);padding:8px 10px;text-align:right;white-space:nowrap;background:#fff}
+tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#fafbfc}
+td.ad{font-weight:600}
+tr.toplam td{font-weight:800;background:var(--zemin);border-top:2px solid var(--cizgi)}
+.sari{background:var(--sari)!important;color:var(--sari-ink)}
+.kirmizi{background:var(--kirmizi)!important;color:var(--kirmizi-ink);font-weight:700}
+
+/* eşleştirme */
+.esl-grup{margin-bottom:18px}
+.esl-grup h3{font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.rozet{display:inline-block;font-size:12px;padding:3px 10px;border-radius:999px;font-weight:600}
+.rozet.iyi{background:var(--yesil);color:var(--yesil-ink)}
+.rozet.incele{background:var(--sari);color:var(--sari-ink)}
+.rozet.notr{background:var(--zemin);color:var(--gri)}
+.esl-kart{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--cizgi);border-radius:10px;margin-bottom:8px}
+.esl-kart .ss{font-weight:600;min-width:230px}
+.esl-kart .ok{color:var(--gri-acik)}
+
+/* veri durumu */
+.veri-kutu{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--cizgi);border-radius:12px;flex:1;min-width:260px}
+.veri-kutu .ikon{width:38px;height:38px;border-radius:10px;background:var(--zemin);display:flex;align-items:center;justify-content:center;font-size:18px}
+.veri-kutu.dolu{border-color:#bfe3c9;background:var(--yesil)}
+.veri-kutu.dolu .ikon{background:#fff}
+.veri-kutu b{display:block}.veri-kutu span{color:var(--gri);font-size:13px}
+
+/* mesaj/uyarı */
+.uyari{background:var(--sari);color:var(--sari-ink);border-radius:10px;padding:10px 14px;margin:8px 0;font-size:14px}
+.hata{background:var(--kirmizi);color:var(--kirmizi-ink);border-radius:10px;padding:10px 14px;margin:8px 0;font-size:14px}
+.bilgi{background:var(--zemin);color:var(--gri);border-radius:10px;padding:10px 14px;margin:8px 0;font-size:13.5px}
+.kaynaklar{display:flex;flex-wrap:wrap;gap:16px;margin:6px 0 14px;padding:14px;background:var(--zemin);border-radius:12px}
+.kaynaklar label{font-size:13.5px;display:flex;gap:6px;align-items:center}
+.notmetin{color:var(--gri-acik);font-size:13px}
 .gizli{display:none}
-.notmetin{font-size:12px;color:var(--gri);margin-top:6px}
-#yukleniyor{position:fixed;inset:0;background:rgba(255,255,255,.7);display:none;align-items:center;justify-content:center;font-size:18px;font-weight:600;z-index:50}
-.kaynaksecim label{margin-right:14px;font-size:13px}
-.tablosar{overflow-x:auto}
+#yukleniyor{position:fixed;inset:0;background:rgba(255,255,255,.78);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:60;flex-direction:column;gap:14px}
+#yukleniyor .sp{width:42px;height:42px;border:4px solid var(--accent-soft);border-top-color:var(--accent);border-radius:50%;animation:dn 1s linear infinite}
+@keyframes dn{to{transform:rotate(360deg)}}
+#mesajlar{position:fixed;right:20px;bottom:20px;z-index:70;max-width:420px}
+@media(max-width:1100px){.kartlar{grid-template-columns:repeat(2,1fr)}#landing h1{font-size:34px}}
 </style>
 </head>
 <body>
-<div id="yukleniyor">⏳ İşleniyor…</div>
-<header>Lazer Grubu — Ay Sonu Raporu Otomasyonu</header>
-<main>
+<div id="yukleniyor"><div class="sp"></div><div id="yuk-metin">İşleniyor…</div></div>
 <div id="mesajlar"></div>
 
-<section>
-  <h2>1) Veri Dosyaları</h2>
-  <div class="satir">
-    <div class="kutu" id="kutu-master" data-tip="master"><b>Master Excel (.xlsx)</b><span>Klasördeki dosya otomatik kullanılır — değiştirmek için tıkla / sürükle</span></div>
-    <div class="kutu" id="kutu-orders" data-tip="orders"><b>ShipStation Orders / Sipariş Özeti CSV</b><span>Gelir verisi: item bazlı Orders export'u VEYA maliyet kolonlu sipariş özeti raporu — tıkla / sürükle</span></div>
-    <div class="kutu" id="kutu-shipments" data-tip="shipments"><b>ShipStation Shipments CSV</b><span>Order # ↔ Store eşleşmesi — tıkla / sürükle</span></div>
+<header>
+  <div class="logo">L</div>
+  <b>Lazer Grubu</b>
+  <span class="alt" id="ust-alt">Aylık Rapor Otomasyonu</span>
+</header>
+
+<!-- ===================== LANDING ===================== -->
+<div id="landing">
+  <div class="badge">Etsy mağaza grubu · ay sonu raporu</div>
+  <h1>Aylık rapor otomasyonu</h1>
+  <p class="deger"><b>20 saatlik aylık manuel iş → dakikalar.</b> Form beyanı + ShipStation gerçeği otomatik eşleşir, denetlenir, raporlanır.</p>
+  <div class="cta">
+    <button class="acc" id="btn-demo">Demo verisini yükle</button>
+    <button class="link" id="btn-kendi">veya kendi verimle çalış</button>
   </div>
-  <input type="file" id="dosyasec" class="gizli">
-</section>
-
-<section>
-  <h2>2) Dönem Seçimi</h2>
-  <div class="satir">
-    <select id="ay"></select>
-    <select id="yil"></select>
-    <button id="btn-analiz">Analiz Et</button>
-    <span id="analiz-ozet" class="notmetin"></span>
+  <div class="mini">
+    <div><b>10</b> mağaza</div>
+    <div><b>3.000+</b> sipariş</div>
+    <div><b>17</b> rapor kolonu</div>
+    <div><b>%5 / %15</b> sapma denetimi</div>
   </div>
-</section>
+</div>
 
-<section id="bolum-eslestirme" class="gizli">
-  <h2>3) Mağaza Eşleştirme <span class="notmetin">(ShipStation adı → Master mağaza adı; onaylayınca store_mapping.json'a kaydedilir)</span></h2>
-  <div class="tablosar"><table id="tablo-eslestirme"></table></div>
-  <p><button id="btn-eslestirme-kaydet">Eşleştirmeleri Kaydet</button></p>
-</section>
-
-<section id="bolum-kargo" class="gizli">
-  <h2>4) Kargo Maliyeti (ShipStation V2 API)</h2>
-  <div class="satir">
-    <button id="btn-api-test" class="ikincil">Bağlantı Testi</button>
-    <button id="btn-api-cek">API'den Kargo Maliyetini Çek</button>
-    <button id="btn-api-yenile" class="ikincil">Cache'i Yenile (API'ye tekrar git)</button>
+<!-- ===================== APP ===================== -->
+<div id="app">
+  <div class="stepper" id="stepper">
+    <div class="st" data-step="1"><span class="n">1</span> Dönem</div>
+    <div class="st" data-step="2"><span class="n">2</span> Veri</div>
+    <div class="st" data-step="3"><span class="n">3</span> Eşleştirme</div>
+    <div class="st" data-step="4"><span class="n">4</span> Denetim</div>
+    <div class="st" data-step="5"><span class="n">5</span> Rapor</div>
   </div>
-  <div class="satir" style="margin-top:10px">
-    <div class="kutu" id="kutu-maliyet" data-tip="maliyet" style="max-width:420px"><b>Alternatif: Maliyet CSV'si</b><span>API çalışmazsa Cost/Shipment Cost kolonlu rapor — tıkla / sürükle</span></div>
-    <button id="btn-maliyet-csv" class="ikincil">CSV'den Hesapla</button>
-  </div>
-  <div id="kargo-sonuc"></div>
-</section>
 
-<section id="bolum-denetim" class="gizli">
-  <h2>5) Denetim — Form Beyanı vs ShipStation <span class="rozet sari" style="background:#fef9c3">%5+ sapma</span><span class="rozet" style="background:#fecaca">%15+ sapma</span></h2>
-  <div id="kalibrasyon"></div>
-  <div class="kaynaksecim" id="kaynaklar">
-    <b style="font-size:13px">Nihai raporda kullanılacak kaynak (kolon bazında):</b><br>
-    <span class="notmetin">Reklam ve İlave Ödeme her zaman formdan alınır.</span><br>
-  </div>
-  <div class="tablosar"><table id="tablo-denetim"></table></div>
-</section>
+  <!-- STEP 1: Dönem -->
+  <section class="panel" id="p1">
+    <h2>Dönem seçimi</h2>
+    <p class="alt2">Raporlanacak ay ve yıl. Türkçe ay adı master formdaki "Dönem" ile eşleşir.</p>
+    <div class="satir">
+      <select id="ay"></select>
+      <select id="yil"></select>
+      <button class="acc" id="btn-analiz">Analiz et</button>
+      <span class="notmetin" id="analiz-ozet"></span>
+    </div>
+  </section>
 
-<section id="bolum-validasyon" class="gizli">
-  <h2>6) Validasyon</h2>
-  <div id="validasyon"></div>
-</section>
+  <!-- STEP 2: Veri -->
+  <section class="panel" id="p2">
+    <h2>Veri kaynakları</h2>
+    <p class="alt2">Master form (beyan) ve ShipStation sipariş özeti (gerçek gelir + kargo maliyeti).</p>
+    <div class="satir">
+      <div class="veri-kutu" id="vk-master"><div class="ikon">📋</div><div><b>Master form</b><span id="vk-master-ad">—</span></div></div>
+      <div class="veri-kutu" id="vk-ozet"><div class="ikon">📦</div><div><b>ShipStation sipariş özeti</b><span id="vk-ozet-ad">—</span></div></div>
+    </div>
+    <div id="p2-kendi" class="gizli">
+      <div class="kaynaklar" style="margin-top:16px">
+        <label><b>Master (.xlsx):</b> <input type="file" id="f-master" accept=".xlsx"></label>
+        <label><b>Sipariş özeti / Orders (.csv):</b> <input type="file" id="f-orders" accept=".csv"></label>
+      </div>
+    </div>
+    <div id="p2-uyari"></div>
+    <div class="aksiyon"><button class="acc" id="btn-p2-devam">Eşleştirmeye geç →</button></div>
+  </section>
 
-<section id="bolum-rapor" class="gizli">
-  <h2>7) Nihai Rapor</h2>
-  <button id="btn-rapor">Excel Raporu Üret ve İndir</button>
-  <span id="rapor-sonuc" class="notmetin"></span>
-</section>
-</main>
+  <!-- STEP 3: Eşleştirme -->
+  <section class="panel" id="p3">
+    <h2>Mağaza eşleştirme</h2>
+    <p class="alt2">ShipStation mağaza adları master adlarıyla otomatik eşleşir. Onaylananlar sözlüğe kaydedilir; sonraki aylar otomatiktir.</p>
+    <div id="esl-icerik"></div>
+    <div class="aksiyon">
+      <button class="acc" id="btn-esl-onayla">Onayla ve denetime geç →</button>
+      <span class="notmetin" id="esl-ozet"></span>
+    </div>
+  </section>
+
+  <!-- STEP 4: Denetim -->
+  <section class="panel" id="p4">
+    <h2>Denetim — form beyanı vs ShipStation gerçeği</h2>
+    <p class="alt2">Her mağaza için beyan ile gerçek yan yana. <span class="rozet incele">%5+ sapma</span> <span class="rozet" style="background:var(--kirmizi);color:var(--kirmizi-ink)">%15+ sapma</span></p>
+    <div id="kalibrasyon"></div>
+    <div class="kaynaklar" id="kaynaklar"></div>
+    <div class="tablosar"><table id="t-denetim"></table></div>
+    <div class="aksiyon"><button class="acc" id="btn-rapor-uret">Raporu oluştur →</button></div>
+  </section>
+
+  <!-- STEP 5: Rapor -->
+  <section class="panel" id="p5">
+    <h2 id="rapor-baslik">Sonuç</h2>
+    <p class="alt2">Yönetici özeti ve nihai rapor tablosu. Tüm hesap kolonları Excel'de tıklanabilir formül olarak yazılır.</p>
+    <div class="kartlar" id="ceo-kartlar"></div>
+    <div class="serit" id="ceo-serit"></div>
+    <div style="margin-top:22px" class="satir">
+      <h2 style="margin:0">Nihai rapor</h2>
+      <button class="acc" id="btn-indir" style="margin-left:auto">⬇ Excel indir</button>
+    </div>
+    <div class="tablosar"><table id="t-rapor"></table></div>
+    <div class="bilgi" id="urun-notu"></div>
+    <div id="amazon-notu"></div>
+  </section>
+</div>
 
 <script>
 const $=s=>document.querySelector(s);
-const ALANLAR=[["ciro","CİRO"],["vergi","VERGİ"],["kargo_musteri","KARGO MÜŞTERİ"],["kargo","KARGO (maliyet)"],["adet","PARÇA ADEDİ"]];
-let sonAnaliz=null, sonDenetim=null, aktifTip=null;
+const ALANLAR=[["ciro","Ciro"],["vergi","Vergi"],["kargo_musteri","Kargo müşteri"],["kargo","Kargo (maliyet)"],["adet","Parça adedi"]];
+const CIRO_ETIKET={subtotal_shipping:"Subtotal + kargo (vergisiz)",order_total:"Order Total",amount_paid:"Amount Paid"};
+let durumBilgi=null, sonAnaliz=null, sonDenetim=null, demoMod=false;
 
-function mesaj(t,tip){const d=document.createElement("div");d.className=tip||"uyari";d.textContent=t;$("#mesajlar").prepend(d);setTimeout(()=>d.remove(),12000);}
-function bekle(a){$("#yukleniyor").style.display=a?"flex":"none";}
-async function api(yol,govde){
-  bekle(true);
+function bekle(a,metin){$("#yuk-metin").textContent=metin||"İşleniyor…";$("#yukleniyor").style.display=a?"flex":"none";}
+function mesaj(t,tip){const d=document.createElement("div");d.className=tip||"uyari";d.textContent=t;$("#mesajlar").appendChild(d);setTimeout(()=>d.remove(),9000);}
+function tl(n){return n==null?"—":Number(n).toLocaleString("tr-TR",{maximumFractionDigits:0});}
+function tl2(n){return n==null?"—":Number(n).toLocaleString("tr-TR",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function pct(n){return n==null?"—":(n*100).toFixed(1)+"%";}
+
+async function api(yol,govde,metin){
+  bekle(true,metin);
   try{
-    const r=await fetch(yol,govde?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(govde)}:undefined);
+    const r=await fetch(yol,govde?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(govde)}:{method:"POST"});
     const j=await r.json();
     if(!r.ok){mesaj(j.hata||"Bilinmeyen hata","hata");return null;}
     return j;
@@ -128,233 +248,237 @@ async function api(yol,govde){
   finally{bekle(false);}
 }
 
-// ---- Dosya yükleme (tıkla + sürükle) ----
-document.querySelectorAll(".kutu").forEach(k=>{
-  k.addEventListener("click",()=>{aktifTip=k.dataset.tip;$("#dosyasec").accept=aktifTip==="master"?".xlsx":".csv";$("#dosyasec").click();});
-  k.addEventListener("dragover",e=>{e.preventDefault();k.classList.add("surukle");});
-  k.addEventListener("dragleave",()=>k.classList.remove("surukle"));
-  k.addEventListener("drop",e=>{e.preventDefault();k.classList.remove("surukle");if(e.dataTransfer.files[0])dosyaYukle(k.dataset.tip,e.dataTransfer.files[0]);});
+/* ---- stepper ---- */
+function adimGoster(n){
+  for(let i=1;i<=5;i++){$("#p"+i).classList.toggle("aktif",i===n);}
+  document.querySelectorAll(".stepper .st").forEach(st=>{
+    const s=+st.dataset.step;
+    st.classList.toggle("aktif",s===n);
+    st.classList.toggle("tamam",s<n);
+  });
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+document.querySelectorAll(".stepper .st").forEach(st=>{
+  st.addEventListener("click",()=>{ if(sonAnaliz) adimGoster(+st.dataset.step); });
 });
-$("#dosyasec").addEventListener("change",e=>{if(e.target.files[0]&&aktifTip)dosyaYukle(aktifTip,e.target.files[0]);e.target.value="";});
-async function dosyaYukle(tip,dosya){
-  bekle(true);
-  const fd=new FormData();fd.append("dosya",dosya);
-  try{
-    const r=await fetch("/api/yukle/"+tip,{method:"POST",body:fd});
-    const j=await r.json();
-    if(!r.ok){mesaj(j.hata,"hata");return;}
-    mesaj(dosya.name+" yüklendi.","tamam");
-    durumYukle();
-  }catch(e){mesaj("Yükleme hatası: "+e.message,"hata");}
-  finally{bekle(false);}
-}
 
-function kutuIsaretle(id,yol,etiket){
-  const k=$(id);
-  if(yol){k.classList.add("dolu");k.querySelector("span").textContent="✓ "+yol;}
-}
-
+/* ---- başlangıç durumu ---- */
 async function durumYukle(){
-  const d=await api("/api/durum");
-  if(!d)return;
-  if(d.master_hata)mesaj(d.master_hata,"hata");
-  kutuIsaretle("#kutu-master",d.master);
-  kutuIsaretle("#kutu-orders",d.orders);
-  kutuIsaretle("#kutu-shipments",d.shipments);
-  kutuIsaretle("#kutu-maliyet",d.maliyet_csv);
-  if(!d.api_anahtari_var)mesaj("Uyarı: .env dosyasında SHIPSTATION_API_KEY bulunamadı; API'den kargo maliyeti çekilemez.","uyari");
+  const r=await fetch("/api/durum"); durumBilgi=await r.json();
   const aySec=$("#ay"),yilSec=$("#yil");
   if(!aySec.options.length){
-    d.aylar.forEach(a=>aySec.add(new Option(a,a)));
-    const yilBu=new Date().getFullYear();
-    for(let y=yilBu-2;y<=yilBu+1;y++)yilSec.add(new Option(y,y));
-    // master'daki en son dönemi varsayılan seç
-    if(d.donemler&&d.donemler.length){
-      const son=d.donemler[d.donemler.length-1];
+    durumBilgi.aylar.forEach(a=>aySec.add(new Option(a,a)));
+    const yb=new Date().getFullYear();
+    for(let y=yb-2;y<=yb+1;y++)yilSec.add(new Option(y,y));
+    if(durumBilgi.donemler&&durumBilgi.donemler.length){
+      const son=durumBilgi.donemler[durumBilgi.donemler.length-1];
       aySec.value=son.donem;yilSec.value=son.yil;
     }
   }
+  if(!durumBilgi.demo_var){$("#btn-demo").disabled=true;$("#btn-demo").textContent="Demo verisi bulunamadı";}
 }
 
-// ---- Analiz ----
-$("#btn-analiz").addEventListener("click",async()=>{
-  const j=await api("/api/analiz",{ay:$("#ay").value,yil:$("#yil").value});
+/* ---- DEMO akışı ---- */
+$("#btn-demo").addEventListener("click",async()=>{
+  const d=await api("/api/demo",null,"Demo verisi yükleniyor…");
+  if(!d)return;
+  demoMod=true; $("#ust-alt").textContent="Demo · "+d.ay+" "+d.yil;
+  $("#landing").style.display="none"; $("#app").style.display="block";
+  $("#ay").value=d.ay; $("#yil").value=d.yil;
+  await analizCalistir(true);
+});
+$("#btn-kendi").addEventListener("click",()=>{
+  demoMod=false; $("#ust-alt").textContent="Aylık Rapor Otomasyonu";
+  $("#landing").style.display="none"; $("#app").style.display="block";
+  $("#p2-kendi").classList.remove("gizli");
+  durumGoster(); adimGoster(1);
+});
+
+/* ---- adım 1: analiz ---- */
+$("#btn-analiz").addEventListener("click",()=>analizCalistir(false));
+async function analizCalistir(otomatik){
+  const j=await api("/api/analiz",{ay:$("#ay").value,yil:$("#yil").value},"Veriler eşleştiriliyor…");
   if(!j)return;
   sonAnaliz=j;
   $("#analiz-ozet").textContent=`${j.ay} ${j.yil}: ${j.form_magaza_sayisi} mağaza formu bulundu.`;
+  durumGoster();
   eslestirmeCiz(j.eslestirme);
-  validasyonCiz(j);
-  ["#bolum-eslestirme","#bolum-kargo","#bolum-denetim","#bolum-validasyon","#bolum-rapor"].forEach(s=>$(s).classList.remove("gizli"));
-  kaynakSecimCiz();
-  denetimYukle();
-});
+  if(otomatik){ adimGoster(3); } else { adimGoster(2); }
+}
 
+/* ---- adım 2: veri durumu ---- */
+function durumGoster(){
+  fetch("/api/durum").then(r=>r.json()).then(s=>{
+    const mk=$("#vk-master"),ok=$("#vk-ozet");
+    if(s.master){mk.classList.add("dolu");$("#vk-master-ad").textContent="✓ "+s.master;}
+    if(s.orders){ok.classList.add("dolu");$("#vk-ozet-ad").textContent="✓ "+s.orders;}
+  });
+}
+$("#btn-p2-devam").addEventListener("click",()=>{ if(sonAnaliz) adimGoster(3); else mesaj("Önce analiz çalıştırın.","uyari"); });
+
+/* kendi dosya yükleme */
+async function dosyaYukle(tip,inp){
+  if(!inp.files[0])return;
+  bekle(true,"Dosya yükleniyor…");
+  const fd=new FormData();fd.append("dosya",inp.files[0]);
+  try{
+    const r=await fetch("/api/yukle/"+tip,{method:"POST",body:fd});const j=await r.json();
+    if(!r.ok){mesaj(j.hata,"hata");return;}
+    mesaj(inp.files[0].name+" yüklendi.","bilgi");durumGoster();
+  }finally{bekle(false);}
+}
+$("#f-master")&&$("#f-master").addEventListener("change",e=>dosyaYukle("master",e.target));
+$("#f-orders")&&$("#f-orders").addEventListener("change",e=>dosyaYukle("orders",e.target));
+
+/* ---- adım 3: eşleştirme ---- */
+function secenekListesi(secili){
+  let s=`<option value="-">— (rapora girmesin)</option><option value="Rapor Dışı (Amazon)">Rapor Dışı (Amazon)</option>`;
+  sonAnaliz.magazalar.forEach(x=>{s+=`<option ${x===secili?"selected":""}>${x}</option>`;});
+  return s;
+}
 function eslestirmeCiz(liste){
-  const t=$("#tablo-eslestirme");
-  let html="<tr><th>ShipStation Mağazası</th><th>Durum</th><th>Master Eşleşmesi</th><th>Skor</th></tr>";
-  const secenekler=m=>{
-    let s=`<option value="-">— (rapora girmesin)</option><option value="Rapor Dışı (Amazon)">Rapor Dışı (Amazon)</option>`;
-    sonAnaliz.magazalar.forEach(x=>{s+=`<option ${x===m?"selected":""}>${x}</option>`;});
-    return s;
-  };
-  liste.forEach((e,i)=>{
-    const rozet=e.durum==="eslesik"?'<span class="rozet iyi">kayıtlı</span>':
-                e.durum==="amazon"?'<span class="rozet">Amazon</span>':
-                e.durum==="oneri"?'<span class="rozet iyi">öneri</span>':'<span class="rozet kotu">eşleşme yok</span>';
-    const secili=e.master||"-";
-    html+=`<tr><td>${e.shipstation}</td><td>${rozet}</td>
-      <td><select data-ss="${e.shipstation.replace(/"/g,"&quot;")}">${
-        e.durum==="amazon"
-          ?`<option selected>Rapor Dışı (Amazon)</option>`+secenekler(null)
-          :secenekler(secili)+(secili==="-"?"":"")
-      }</select></td><td>${e.skor??""}</td></tr>`;
-    // seçili değeri uygula
-  });
-  t.innerHTML=html;
-  liste.forEach(e=>{
-    const sel=t.querySelector(`select[data-ss="${CSS.escape(e.shipstation)}"]`);
-    if(sel&&e.master)sel.value=e.master;
-  });
-}
-
-$("#btn-eslestirme-kaydet").addEventListener("click",async()=>{
-  const eslesmeler={};
-  document.querySelectorAll("#tablo-eslestirme select").forEach(s=>{eslesmeler[s.dataset.ss]=s.value;});
-  const j=await api("/api/eslestirme/kaydet",{eslesmeler});
-  if(j){mesaj("Eşleştirmeler kaydedildi ("+j.kayitli+" mağaza).","tamam");denetimYukle();}
-});
-
-// ---- Kargo maliyeti ----
-$("#btn-api-test").addEventListener("click",async()=>{
-  const j=await api("/api/kargo/test",{});
-  if(j)mesaj("API bağlantısı başarılı. Label alanları: "+(j.alanlar||[]).join(", "),"tamam");
-});
-async function kargoCek(yenile){
-  const j=await api("/api/kargo/api",{yenile});
-  if(!j)return;
-  kargoSonucGoster(j);
-  denetimYukle();
-}
-$("#btn-api-cek").addEventListener("click",()=>kargoCek(false));
-$("#btn-api-yenile").addEventListener("click",()=>kargoCek(true));
-$("#btn-maliyet-csv").addEventListener("click",async()=>{
-  const j=await api("/api/kargo/csv",{});
-  if(!j)return;
-  kargoSonucGoster(j);
-  denetimYukle();
-});
-function kargoSonucGoster(j){
-  const adetler=Object.keys(j.magaza_kargo||{}).length;
-  let h=`<div class="tamam">Kargo maliyeti hazır (${j.kaynak==="api"?"API":"CSV"}): ${adetler} mağaza.`;
-  if(j.voided)h+=` ${j.voided} voided/iptal label hariç tutuldu.`;
-  if(j.eslesmeyen&&j.eslesmeyen.adet)h+=` ⚠ ${j.eslesmeyen.adet} gönderi mağazayla eşleştirilemedi (${j.eslesmeyen.maliyet}$).`;
-  h+="</div>";
-  const bilinmeyen=j.bilinmeyen_store_idler||{};
-  if(Object.keys(bilinmeyen).length){
-    h+=`<div class="uyari">Bilinmeyen store_id'ler: ${Object.entries(bilinmeyen).map(([k,v])=>`${k} (${v.adet} gönderi)`).join(", ")} — Orders/Shipments CSV'lerinde bu siparişler yoksa eşleme yapılamaz.</div>`;
+  const onayli=liste.filter(e=>e.durum==="eslesik");
+  const incele=liste.filter(e=>e.durum==="oneri"||e.durum==="bilinmiyor");
+  const amazon=liste.filter(e=>e.durum==="amazon");
+  let h="";
+  if(onayli.length){
+    h+=`<div class="esl-grup"><h3><span class="rozet iyi">Otomatik eşleşti</span> ${onayli.length} mağaza</h3>`;
+    onayli.forEach(e=>{h+=eslKart(e,true);});
+    h+=`</div>`;
   }
-  $("#kargo-sonuc").innerHTML=h;
+  if(incele.length){
+    h+=`<div class="esl-grup"><h3><span class="rozet incele">İnceleme gerekli</span> ${incele.length} mağaza — adı benzer, onayınızı bekliyor</h3>`;
+    incele.forEach(e=>{h+=eslKart(e,false);});
+    h+=`</div>`;
+  }
+  if(amazon.length){
+    h+=`<div class="esl-grup"><h3><span class="rozet notr">Rapor dışı (Amazon)</span> ${amazon.length} mağaza</h3>`;
+    amazon.forEach(e=>{h+=eslKart(e,true);});
+    h+=`</div>`;
+  }
+  $("#esl-icerik").innerHTML=h;
+  liste.forEach(e=>{const sel=document.querySelector(`select[data-ss="${CSS.escape(e.shipstation)}"]`);
+    if(sel&&e.master)sel.value=e.master;});
+  $("#esl-ozet").textContent=`${onayli.length} otomatik · ${incele.length} inceleme`;
 }
+function eslKart(e,kilit){
+  const skor=e.skor?`<span class="notmetin">benzerlik ${Math.round(e.skor)}%</span>`:"";
+  return `<div class="esl-kart"><span class="ss">${e.shipstation}</span><span class="ok">→</span>
+    <select data-ss="${e.shipstation.replace(/"/g,'&quot;')}">${secenekListesi(e.master||"-")}</select> ${skor}</div>`;
+}
+$("#btn-esl-onayla").addEventListener("click",async()=>{
+  const eslesmeler={};
+  document.querySelectorAll("#esl-icerik select").forEach(s=>eslesmeler[s.dataset.ss]=s.value);
+  const j=await api("/api/eslestirme/kaydet",{eslesmeler},"Eşleştirmeler kaydediliyor…");
+  if(!j)return;
+  await denetimYukle(); adimGoster(4);
+});
 
-// ---- Denetim ----
+/* ---- adım 4: denetim ---- */
 function kaynakSecimCiz(){
-  const k=$("#kaynaklar");
-  k.querySelectorAll(".secim").forEach(e=>e.remove());
-  ALANLAR.forEach(([alan,etiket])=>{
-    const d=document.createElement("span");d.className="secim";
-    d.innerHTML=` <label><b>${etiket}:</b>
-      <select data-alan="${alan}">
-        <option value="shipstation" selected>ShipStation</option>
-        <option value="form">Form</option>
-      </select></label>`;
+  const k=$("#kaynaklar"); k.innerHTML="<b style='font-size:13.5px'>Rapor kaynağı:</b>";
+  ALANLAR.forEach(([alan,et])=>{
+    const d=document.createElement("label");
+    d.innerHTML=`${et}: <select data-alan="${alan}"><option value="shipstation">ShipStation</option><option value="form">Form</option></select>`;
     k.appendChild(d);
   });
-  const c=document.createElement("span");c.className="secim";
-  c.innerHTML=` <label><b>Ciro tanımı:</b>
-    <select id="ciro-kaynagi">
-      <option value="subtotal_shipping">Subtotal + Kargo (vergisiz)</option>
-      <option value="order_total">Order Total</option>
-      <option value="amount_paid">Amount Paid</option>
-    </select></label>`;
+  const c=document.createElement("label");
+  c.innerHTML=`Ciro tanımı: <select id="ciro-kaynagi">
+    <option value="subtotal_shipping">Subtotal+kargo</option><option value="order_total">Order Total</option><option value="amount_paid">Amount Paid</option></select>`;
   k.appendChild(c);
-  if(sonAnaliz&&sonAnaliz.ozet_var){
-    // Özet raporu modunda: form 'Vergi'si Etsy kesintisi olduğundan SS satış
-    // vergisiyle değiştirilmemeli → varsayılanı Form yap
-    const v=k.querySelector('select[data-alan="vergi"]'); if(v)v.value="form";
-  }else{
-    $("#ciro-kaynagi").value="order_total";
-  }
-  $("#ciro-kaynagi").addEventListener("change",denetimYukle);
+  // varsayılanlar: ShipStation; Vergi → Form (Etsy kesintisi, kıyas dışı)
+  k.querySelector('select[data-alan="vergi"]').value="form";
+  k.querySelectorAll("select").forEach(s=>s.addEventListener("change",denetimYukle));
 }
-
 async function denetimYukle(){
-  if(!sonAnaliz)return;
-  const j=await api("/api/denetim",{ciro_kaynagi:($("#ciro-kaynagi")||{}).value||"order_total"});
-  if(!j)return;
-  sonDenetim=j;
-  // kalibrasyon
+  if(!$("#kaynaklar").children.length) kaynakSecimCiz();
+  const ck=($("#ciro-kaynagi")||{}).value;
+  const j=await api("/api/denetim",{ciro_kaynagi:ck},"Denetleniyor…");
+  if(!j)return; sonDenetim=j;
   const kal=j.kalibrasyon;let kh="";
-  const adEtiket={subtotal_shipping:"Subtotal + Kargo (vergisiz)",order_total:"Order Total",amount_paid:"Amount Paid"};
   if(kal&&kal.magaza_sayisi){
-    const sap=Object.entries(kal.medyan_sapmalar||{}).filter(([,v])=>v!=null).map(([a,v])=>`${adEtiket[a]||a}: ${pct(v)}`).join(", ");
-    kh=`<div class="${kal.net?"tamam":"uyari"}">Ciro kalibrasyonu (${kal.magaza_sayisi} mağaza, medyan sapma): ${sap}. ${kal.net?("Öneri: <b>"+(adEtiket[kal.oneri]||kal.oneri)+"</b>"):"Fark küçük; 'Ciro tanımı' seçimini kendiniz yapın."}</div>`;
-    if(kal.net&&$("#ciro-kaynagi")&&!$("#ciro-kaynagi").dataset.elle){$("#ciro-kaynagi").value=kal.oneri;}
+    const sap=Object.entries(kal.medyan_sapmalar||{}).filter(([,v])=>v!=null).map(([a,v])=>`${CIRO_ETIKET[a]||a}: ${pct(v)}`).join(" · ");
+    kh=`<div class="bilgi">Ciro kalibrasyonu (${kal.magaza_sayisi} mağaza, medyan sapma): ${sap}. ${kal.net?("Önerilen tanım: <b>"+(CIRO_ETIKET[kal.oneri]||kal.oneri)+"</b>"):"Seçimi siz yapın."}</div>`;
+    if(kal.net&&$("#ciro-kaynagi")&&!$("#ciro-kaynagi").dataset.elle)$("#ciro-kaynagi").value=kal.oneri;
   }
+  kh+=`<div class="bilgi">Not: <b>Vergi</b> form beyanı Etsy kesintisidir; ShipStation satış vergisiyle birebir kıyaslanamaz → kaynak <b>Form</b> (varsayılan). Reklam ve İlave ödeme her zaman formdan.</div>`;
   $("#kalibrasyon").innerHTML=kh;
   if($("#ciro-kaynagi"))$("#ciro-kaynagi").addEventListener("change",()=>{$("#ciro-kaynagi").dataset.elle="1";},{once:true});
-  // tablo
   let html="<tr><th>Mağaza</th>";
-  ALANLAR.forEach(([a,e])=>{html+=`<th>${e}<br><small>Form / ShipStation / Sapma</small></th>`;});
+  ALANLAR.forEach(([a,et])=>{
+    const ek = a==="vergi" ? " · kıyas dışı" : "";
+    html+=`<th>${et}<br><span style='font-weight:400;font-size:11px'>form / gerçek / sapma${ek}</span></th>`;
+  });
   html+="</tr>";
   j.tablo.forEach(s=>{
-    html+=`<tr><td><b>${s.magaza}</b>${s.ss_var?"":' <span class="rozet kotu">SS verisi yok</span>'}</td>`;
+    html+=`<tr><td class="ad">${s.magaza}${s.ss_var?"":' <span class="rozet incele">SS yok</span>'}</td>`;
     ALANLAR.forEach(([a])=>{
       const v=s.alanlar[a];
-      const renk=v.renk==="sari"?"sari":v.renk==="kirmizi"?"kirmizi":"";
-      html+=`<td class="${renk}">${num(v.form)} / ${num(v.shipstation)} / ${v.sapma==null?"—":pct(v.sapma)}</td>`;
+      // Vergi yapısal olarak kıyaslanamaz (Etsy kesintisi vs satış vergisi) →
+      // nötr göster, gerçek sapmalar (ciro/kargo/adet) öne çıksın
+      const c = a==="vergi" ? "" : (v.renk==="sari"?"sari":v.renk==="kirmizi"?"kirmizi":"");
+      const sap = a==="vergi" ? "—" : (v.sapma==null?"—":pct(v.sapma));
+      html+=`<td class="${c}">${tl(v.form)} / ${tl(v.shipstation)} / ${sap}</td>`;
     });
     html+="</tr>";
   });
-  $("#tablo-denetim").innerHTML=html;
-  validasyonEk(j);
+  $("#t-denetim").innerHTML=html;
 }
-function num(v){return v==null?"—":Number(v).toLocaleString("tr-TR",{maximumFractionDigits:2});}
-function pct(v){return v==null?"—":(v*100).toFixed(1)+"%";}
-
-// ---- Validasyon ----
-function validasyonCiz(j){
-  let h="";
-  (j.uyarilar||[]).forEach(u=>h+=`<div class="uyari">⚠ ${u}</div>`);
-  (j.bozuk_satirlar||[]).forEach(b=>h+=`<div class="hata">Master satır ${b.satir}${b.magaza?" ("+b.magaza+")":""}: ${b.sorun}</div>`);
-  if(j.iptal_iade&&j.iptal_iade.length){
-    h+=`<div class="uyari"><b>İptal / negatif tutarlı siparişler (toplamlara dahil edilmedi):</b><br>${j.iptal_iade.map(x=>`${x.order_no} — ${x.store} — ${x.tarih} — ${num(x.order_total)} (${x.durum})`).join("<br>")}</div>`;
-  }
-  if(!h)h='<div class="tamam">Sorun bulunamadı.</div>';
-  $("#validasyon").innerHTML=h;
-  $("#validasyon").dataset.taban=h;
-}
-function validasyonEk(j){
-  let h=$("#validasyon").dataset.taban||"";
-  if(j.form_var_ss_yok&&j.form_var_ss_yok.length)
-    h+=`<div class="uyari"><b>Formu var, ShipStation verisi yok:</b> ${j.form_var_ss_yok.join(", ")}</div>`;
-  if(j.eslesmeyen_shipstation&&j.eslesmeyen_shipstation.length)
-    h+=`<div class="uyari"><b>ShipStation'da var, master'a eşlenmemiş (formu doldurulmamış olabilir):</b> ${j.eslesmeyen_shipstation.join(", ")}</div>`;
-  if(j.amazon&&j.amazon.length)
-    h+=`<div class="uyari"><b>Rapor Dışı (Amazon):</b> ${j.amazon.map(a=>`${a.magaza} (${a.siparis} sipariş, kargo ${num(a.kargo)})`).join(" · ")}</div>`;
-  if(!j.kargo_hazir)
-    h+=`<div class="uyari">Kargo maliyeti henüz çekilmedi — raporda "Kargo" kolonu form beyanından doldurulur (ya da 4. bölümden API/CSV ile çekin).</div>`;
-  $("#validasyon").innerHTML=h;
-}
-
-// ---- Rapor ----
-$("#btn-rapor").addEventListener("click",async()=>{
-  const kaynaklar={};
-  document.querySelectorAll("#kaynaklar select[data-alan]").forEach(s=>kaynaklar[s.dataset.alan]=s.value);
-  const j=await api("/api/rapor",{kaynaklar,ciro_kaynagi:($("#ciro-kaynagi")||{}).value||"order_total"});
-  if(!j)return;
-  $("#rapor-sonuc").textContent=j.dosya+" üretildi, indiriliyor…";
-  window.location="/api/rapor/indir";
+$("#btn-rapor-uret").addEventListener("click",async()=>{
+  await raporGoster(); adimGoster(5);
 });
+
+/* ---- adım 5: sonuç + CEO ---- */
+function kaynaklarTopla(){
+  const k={};document.querySelectorAll('#kaynaklar select[data-alan]').forEach(s=>k[s.dataset.alan]=s.value);
+  return {kaynaklar:k,ciro_kaynagi:($("#ciro-kaynagi")||{}).value};
+}
+async function raporGoster(){
+  const cfg=kaynaklarTopla();
+  const s=await api("/api/sonuc",cfg,"Sonuç hesaplanıyor…");
+  if(!s)return;
+  const u=await api("/api/rapor",cfg,"Excel hazırlanıyor…");
+  $("#rapor-baslik").textContent=`Sonuç — ${s.ay} ${s.yil}`;
+  const c=s.ceo;
+  $("#ceo-kartlar").innerHTML=`
+    ${kart("İşlenen sipariş",tl(c.islenen_siparis),"ShipStation'dan otomatik")}
+    ${kart("Toplam ciro",tl(c.toplam_ciro)+" $","")}
+    ${kart("Toplam kargo",tl(c.toplam_kargo)+" $","gerçek maliyet")}
+    ${kartVurgu("Toplam kalan",tl(c.toplam_kalan)+" $","ciro − vergi − reklam − kargo")}
+    ${kart("Eşleşen mağaza",c.eslesen_magaza+"/"+c.toplam_magaza,"eşleşme oranı %"+c.match_rate)}
+    ${kart("Otomatik hesaplanan",c.otomatik_kolon+" kolon","ShipStation gerçeğinden")}
+    ${kart("Manuel giriş",c.manuel_kolon+" kolon","reklam, vergi, ilave ödeme")}
+    ${kart("Amazon (rapor dışı)",tl(c.amazon_siparis)+" sipariş","ayrı listelenir")}`;
+  $("#ceo-serit").innerHTML=`⏱ Tahmini zaman tasarrufu: <b style="margin-left:6px">${c.zaman_tasarrufu}</b>`;
+  raporTablo(s);
+  $("#urun-notu").innerHTML=`Ürün adetleri (${s.urun_basliklari.length} ürün kolonu) form beyanından raporun sağ tarafına yazılır. <b>Otomatik SKU sınıflandırma yol haritasında.</b>`;
+  $("#amazon-notu").innerHTML = s.amazon&&s.amazon.length
+    ? `<div class="uyari">Rapor dışı (Amazon): ${s.amazon.map(a=>`${a.magaza} (${tl(a.siparis)} sipariş)`).join(" · ")}</div>` : "";
+}
+function kart(k,v,s){return `<div class="kart"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||""}</div></div>`;}
+function kartVurgu(k,v,s){return `<div class="kart vurgu"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||""}</div></div>`;}
+function raporTablo(s){
+  const C=[["magaza","Mağaza"],["ciro","Ciro"],["pb_ciro","Parça başı ciro"],["vergi","Vergi"],["reklam","Reklam"],
+    ["kargo_musteri","Kargo müşteri"],["kargo_pb_odenen","Krg pb ödenen"],["kargo_pb_kalan","Krg pb kalan"],
+    ["kargo","Kargo"],["adet","Parça adedi"],["ilave_odeme","İlave ödeme"],["kalan","Kalan"],
+    ["yuzde_reklam","%Reklam"],["yuzde_vergi","%Vergi"],["pb_kalan","Parça başı kalan"],["upgrade","Upgrade"]];
+  const ondalik=new Set(["pb_ciro","kargo_pb_odenen","kargo_pb_kalan","pb_kalan"]);
+  const yuzde=new Set(["yuzde_reklam","yuzde_vergi"]);
+  const tamsayi=new Set(["adet","upgrade"]);
+  const fmt=(k,v)=>k==="magaza"?v:yuzde.has(k)?pct(v):ondalik.has(k)?tl2(v):tamsayi.has(k)?tl(v):tl(v);
+  let h="<tr>";C.forEach(([,et])=>h+=`<th>${et}</th>`);h+="</tr>";
+  s.tablo.forEach(row=>{h+="<tr>";C.forEach(([k])=>{h+=`<td class="${k==='magaza'?'ad':''}">${fmt(k,row[k])}</td>`;});h+="</tr>";});
+  const t=s.toplam;
+  h+='<tr class="toplam"><td>TOPLAM</td>';
+  C.slice(1).forEach(([k])=>{
+    let v = (k in t)?t[k]:null;
+    if(["pb_ciro","kargo_pb_odenen","kargo_pb_kalan","pb_kalan"].includes(k)) v=null; // toplamda anlamsız
+    h+=`<td>${v==null?"":fmt(k,v)}</td>`;
+  });
+  h+="</tr>";
+  $("#t-rapor").innerHTML=h;
+}
+$("#btn-indir").addEventListener("click",()=>{ window.location="/api/rapor/indir"; });
 
 durumYukle();
 </script>
