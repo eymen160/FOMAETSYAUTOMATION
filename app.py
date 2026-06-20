@@ -621,5 +621,9 @@ def genel_hata(e):
 
 
 if __name__ == "__main__":
-    print("Lazer Grubu Rapor Otomasyonu → http://127.0.0.1:5000")
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    # Port meşgulse PORT ortam değişkeniyle değiştirilebilir:
+    #   PORT=5001 python3 app.py
+    # macOS'te 5000 genelde AirPlay Receiver tarafından kullanılır.
+    port = int(os.environ.get("PORT", "5000"))
+    print(f"Lazer Grubu Rapor Otomasyonu → http://127.0.0.1:{port}")
+    app.run(host="127.0.0.1", port=port, debug=False)
