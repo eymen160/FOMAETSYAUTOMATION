@@ -4,30 +4,7 @@
 <meta charset="utf-8">
 <title>Giriş — Lazer Grubu</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<style>
-:root{--accent:#ea7a0c;--accent-dark:#b75e06;--ink:#1f2430;--gri:#6b7280;--cizgi:#e6e8ec}
-*{box-sizing:border-box}
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
-  background:linear-gradient(135deg,#fff7ed 0%,#f4f5f7 55%,#eef1f5 100%);
-  min-height:100vh;display:flex;align-items:center;justify-content:center;color:var(--ink)}
-.kutu{background:#fff;border:1px solid var(--cizgi);border-radius:18px;padding:40px 38px;width:380px;
-  box-shadow:0 18px 50px rgba(31,36,48,.10)}
-.marka{display:flex;align-items:center;gap:12px;margin-bottom:6px}
-.logo{width:44px;height:44px;border-radius:12px;background:var(--accent);display:flex;align-items:center;
-  justify-content:center;color:#fff;font-weight:800;font-size:22px}
-.marka b{font-size:19px}
-.alt{color:var(--gri);font-size:13.5px;margin:0 0 26px}
-label{display:block;font-size:13px;font-weight:600;color:var(--gri);margin:14px 0 6px}
-input{width:100%;padding:12px 14px;border:1px solid var(--cizgi);border-radius:10px;font-size:15px}
-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px #fde7cf}
-button{width:100%;margin-top:22px;background:var(--accent);color:#fff;border:0;border-radius:10px;
-  padding:13px;font-size:15px;font-weight:700;cursor:pointer;transition:background .15s}
-button:hover{background:var(--accent-dark)}
-button:disabled{opacity:.6;cursor:not-allowed}
-.hata{background:#fde2e1;color:#b42318;border-radius:10px;padding:10px 12px;font-size:13.5px;
-  margin-top:16px;display:none}
-.ipuc{color:#9ca3af;font-size:12px;text-align:center;margin-top:18px}
-</style>
+<link rel="stylesheet" href="/static/css/giris.css">
 </head>
 <body>
 <form class="kutu" id="form">
@@ -41,20 +18,6 @@ button:disabled{opacity:.6;cursor:not-allowed}
   <div class="hata" id="hata"></div>
   <p class="ipuc">Yalnızca yetkili ekip erişimi içindir.</p>
 </form>
-<script>
-const $=s=>document.querySelector(s);
-$("#form").addEventListener("submit",async e=>{
-  e.preventDefault();
-  $("#btn").disabled=true; $("#hata").style.display="none";
-  try{
-    const r=await fetch("/giris",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({kullanici:$("#kullanici").value,sifre:$("#sifre").value})});
-    const j=await r.json();
-    if(r.ok&&j.tamam){ window.location="/"; return; }
-    $("#hata").textContent=j.hata||"Giriş başarısız."; $("#hata").style.display="block";
-  }catch(err){ $("#hata").textContent="Sunucuya ulaşılamadı."; $("#hata").style.display="block"; }
-  finally{ $("#btn").disabled=false; }
-});
-</script>
+<script src="/static/js/giris.js"></script>
 </body>
 </html>
