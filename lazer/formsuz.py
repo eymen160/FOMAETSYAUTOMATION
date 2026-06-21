@@ -52,12 +52,18 @@ def _kanonik(ss_ad, eslesme):
 
 
 def rapor_satirlari(ozet_sonuc, kalem_sonuc=None, elle_girdiler=None,
-                    eslesme=None, ciro_kaynagi="subtotal_shipping"):
+                    eslesme=None, ciro_kaynagi="subtotal_shipping",
+                    etsy_finansal=None, reklam_magaza=None):
     """ShipStation verisinden formsuz rapor satırları üretir.
 
     ozet_sonuc: shipstation_csv.ozet_isle çıktısı (gelir + kargo maliyeti)
     kalem_sonuc: urun_eslestirme.kalem_isle çıktısı (ürün + adet) — opsiyonel
     elle_girdiler: {kanonik_magaza: {reklam, ilave_odeme, upgrade}}
+    etsy_finansal: {ss_store: {komisyon, net, brut, kdv, iade, iade_sayisi}}
+        — Etsy Order# join'inden (etsy.magaza_finansal); satıra komisyon/net/
+        iade ekler
+    reklam_magaza: {ss_store|kanonik: reklam_tutari} — Etsy Ads hesap özetinden
+        otomatik reklam (elle girdi varsa o önceliklidir)
     Dönüş: (satirlar, amazon_liste, urun_basliklari)
     """
     eslesme = eslesme or {}
@@ -100,6 +106,25 @@ def rapor_satirlari(ozet_sonuc, kalem_sonuc=None, elle_girdiler=None,
             for kat, adet in urunler.items():
                 d[kat] = d.get(kat, 0) + adet
 
+    # Etsy finansal (komisyon/net/iade) — ss_store → kanonik topla
+    etsy_kanon = {}
+    for ss_ad, f in (etsy_finansal or {}).items():
+        if amazon_mu(ss_ad) or eslesme.get(ss_ad.strip()) in (
+                "-", eslestirme.AMAZON_ETIKETI):
+            continue
+        kanon = _kanonik(ss_ad, eslesme)
+        d = etsy_kanon.setdefault(kanon, {"komisyon": 0.0, "net": 0.0,
+            "brut": 0.0, "kdv": 0.0, "iade": 0.0, "iade_sayisi": 0})
+        for k in ("komisyon", "net", "brut", "kdv", "iade"):
+            d[k] += f.get(k, 0.0) or 0.0
+        d["iade_sayisi"] += f.get("iade_sayisi", 0) or 0
+
+    # Reklam (ss_store ya da kanonik anahtarlı) — kanonik topla
+    reklam_kanon = {}
+    for ad, tutar in (reklam_magaza or {}).items():
+        kanon = _kanonik(ad, eslesme)
+        reklam_kanon[kanon] = reklam_kanon.get(kanon, 0.0) + (tutar or 0.0)
+
     # Ürün başlıkları (görünen sıra: kategori listesi + Diğer)
     from .urun_eslestirme import KATEGORILER
     urun_basliklari = list(KATEGORILER)
@@ -112,6 +137,11 @@ def rapor_satirlari(ozet_sonuc, kalem_sonuc=None, elle_girdiler=None,
         u = urun.get(kanon, {})
         adet = sum(u.values()) if u else m["siparis"]   # kalem yoksa sipariş sayısı
         el = elle_girdiler.get(kanon, {})
+        ef = etsy_kanon.get(kanon, {})
+        # Reklam: elle girdi öncelikli; yoksa Etsy Ads özetinden otomatik
+        reklam_elle = el.get("reklam")
+        reklam = (float(reklam_elle) if reklam_elle
+                  else round(reklam_kanon.get(kanon, 0.0), 2))
         satirlar.append({
             "magaza": kanon,
             "ciro": round(m["ciro"], 2),
@@ -119,9 +149,16 @@ def rapor_satirlari(ozet_sonuc, kalem_sonuc=None, elle_girdiler=None,
             "kargo_musteri": round(m["kargo_musteri"], 2),
             "kargo": round(m["kargo"], 2),
             "adet": int(adet),
-            "reklam": float(el.get("reklam") or 0),
+            "reklam": reklam,
             "ilave_odeme": float(el.get("ilave_odeme") or 0),
             "upgrade": float(el.get("upgrade") or 0),
+            # Etsy zenginleştirme (yoksa 0)
+            "komisyon": round(ef.get("komisyon", 0.0), 2),
+            "net": round(ef.get("net", 0.0), 2),
+            "etsy_brut": round(ef.get("brut", 0.0), 2),
+            "etsy_kdv": round(ef.get("kdv", 0.0), 2),
+            "iade": round(ef.get("iade", 0.0), 2),
+            "iade_sayisi": int(ef.get("iade_sayisi", 0)),
             "urunler": u,
             "siparis": m["siparis"],
         })

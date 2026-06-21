@@ -87,5 +87,43 @@ def test_elle_kaydet_yukle(tmp_path):
     assert v["2026-05"]["B"]["upgrade"] == 2
 
 
+def test_formsuz_etsy_finansal_zenginlestirir():
+    # Etsy komisyon/net/iade ss_store anahtarıyla satıra eklenmeli
+    etsy_fin = {"Etched Elegance Shop": {"komisyon": 38.0, "net": 962.0,
+                                         "brut": 1000.0, "kdv": 0.0,
+                                         "iade": 25.0, "iade_sayisi": 1}}
+    s, _, _ = formsuz.rapor_satirlari(_ozet(), _kalem(), {}, {},
+                                      etsy_finansal=etsy_fin)
+    r = next(x for x in s if x["magaza"] == "Etched Elegance Shop")
+    assert r["komisyon"] == 38.0 and r["net"] == 962.0
+    assert r["iade"] == 25.0 and r["iade_sayisi"] == 1
+
+
+def test_formsuz_etsy_finansal_kanonik_eslesir():
+    # Etsy ss_store adı, store_mapping ile kanonik ada toplanmalı
+    etsy_fin = {"Etched Elegance Shop": {"komisyon": 10.0, "net": 90.0,
+                                         "iade": 0.0, "iade_sayisi": 0}}
+    s, _, _ = formsuz.rapor_satirlari(
+        _ozet(), _kalem(), {}, {"Etched Elegance Shop": "Etched Elegance"},
+        etsy_finansal=etsy_fin)
+    r = next(x for x in s if x["magaza"] == "Etched Elegance")
+    assert r["komisyon"] == 10.0 and r["net"] == 90.0
+
+
+def test_formsuz_reklam_otomatik_ve_elle_oncelik():
+    reklam = {"Etched Elegance Shop": 120.0}
+    # Elle girdi yoksa otomatik reklam gelir
+    s, _, _ = formsuz.rapor_satirlari(_ozet(), _kalem(), {}, {},
+                                      reklam_magaza=reklam)
+    r = next(x for x in s if x["magaza"] == "Etched Elegance Shop")
+    assert r["reklam"] == 120.0
+    # Elle girdi varsa o öncelikli (otomatiği ezer)
+    elle = {"Etched Elegance Shop": {"reklam": 300}}
+    s2, _, _ = formsuz.rapor_satirlari(_ozet(), _kalem(), elle, {},
+                                       reklam_magaza=reklam)
+    r2 = next(x for x in s2 if x["magaza"] == "Etched Elegance Shop")
+    assert r2["reklam"] == 300
+
+
 def test_donem_anahtari():
     assert formsuz.donem_anahtari(2026, 5) == "2026-05"
