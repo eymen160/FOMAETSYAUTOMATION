@@ -168,6 +168,9 @@ tr.toplam td{font-weight:800;background:var(--zemin);border-top:2px solid var(--
       <button class="acc" id="btn-analiz">Analiz et</button>
       <span class="notmetin" id="analiz-ozet"></span>
     </div>
+    <label style="display:block;margin-top:12px;font-size:14px">
+      <input type="checkbox" id="formsuz-toggle"> Ham veriden üret (master form yok) — Ciro/Vergi/Kargo/ürünler doğrudan ShipStation'dan; Reklam/İlave/Upgrade elle girilir
+    </label>
   </section>
 
   <!-- STEP 2: Veri -->
@@ -284,7 +287,12 @@ function adimGoster(n){
   window.scrollTo({top:0,behavior:"smooth"});
 }
 document.querySelectorAll(".stepper .st").forEach(st=>{
-  st.addEventListener("click",()=>{ if(sonAnaliz) adimGoster(+st.dataset.step); });
+  st.addEventListener("click",()=>{
+    if(!sonAnaliz)return;
+    let n=+st.dataset.step;
+    if(sonAnaliz.mod==="formsuz"&&n===4)n=5;  // formsuz'da denetim adımı yok
+    adimGoster(n);
+  });
 });
 
 /* ---- başlangıç durumu ---- */
@@ -322,13 +330,39 @@ $("#btn-kendi").addEventListener("click",()=>{
 /* ---- adım 1: analiz ---- */
 $("#btn-analiz").addEventListener("click",()=>analizCalistir(false));
 async function analizCalistir(otomatik){
-  const j=await api("/api/analiz",{ay:$("#ay").value,yil:$("#yil").value},"Veriler eşleştiriliyor…");
+  const formsuz=$("#formsuz-toggle")&&$("#formsuz-toggle").checked;
+  const j=await api("/api/analiz",{ay:$("#ay").value,yil:$("#yil").value,formsuz:formsuz},"Veriler işleniyor…");
   if(!j)return;
   sonAnaliz=j;
-  $("#analiz-ozet").textContent=`${j.ay} ${j.yil}: ${j.form_magaza_sayisi} mağaza formu bulundu.`;
   durumGoster();
+  if(j.mod==="formsuz"){
+    $("#analiz-ozet").textContent=`${j.ay} ${j.yil}: ${j.magaza_sayisi} mağaza (ham veriden).`;
+    elleGirdiCiz(j);
+    adimGoster(3);
+    return;
+  }
+  $("#analiz-ozet").textContent=`${j.ay} ${j.yil}: ${j.form_magaza_sayisi} mağaza formu bulundu.`;
   eslestirmeCiz(j.eslestirme);
   if(otomatik){ adimGoster(3); } else { adimGoster(2); }
+}
+
+// Formsuz mod: eşleştirme panelini elle-girdi tablosuna çevirir
+function elleGirdiCiz(j){
+  document.querySelector('.stepper .st[data-step="3"]').querySelector('.n').nextSibling;
+  let h=`<p class="alt2">Reklam, İlave ödeme ve Upgrade ham veride yok — buradan girin (dönem bazında kaydedilir). Diğer tüm kolonlar ShipStation'dan otomatik.</p>`;
+  h+=`<div class="tablosar"><table id="t-elle"><tr><th>Mağaza</th><th>Reklam ($)</th><th>İlave ödeme ($)</th><th>Upgrade (adet)</th></tr>`;
+  j.magazalar.forEach(m=>{
+    const e=(j.elle&&j.elle[m])||{};
+    h+=`<tr><td class="ad">${m}</td>
+      <td><input type="number" step="0.01" data-m="${m.replace(/"/g,'&quot;')}" data-f="reklam" value="${e.reklam||''}" style="width:110px"></td>
+      <td><input type="number" step="0.01" data-m="${m.replace(/"/g,'&quot;')}" data-f="ilave_odeme" value="${e.ilave_odeme||''}" style="width:110px"></td>
+      <td><input type="number" step="1" data-m="${m.replace(/"/g,'&quot;')}" data-f="upgrade" value="${e.upgrade||''}" style="width:90px"></td></tr>`;
+  });
+  h+=`</table></div>`;
+  if(j.amazon&&j.amazon.length) h+=`<div class="uyari" style="margin-top:10px">Rapor dışı (Amazon): ${j.amazon.map(a=>`${a.magaza} (${tl(a.siparis)} sipariş)`).join(" · ")}</div>`;
+  $("#esl-icerik").innerHTML=h;
+  $("#esl-ozet").textContent=`${j.magaza_sayisi} mağaza · ham veriden`;
+  $("#btn-esl-onayla").textContent="Kaydet ve rapora geç →";
 }
 
 /* ---- adım 2: veri durumu ---- */
@@ -394,6 +428,16 @@ function eslKart(e,kilit){
     <select data-ss="${e.shipstation.replace(/"/g,'&quot;')}">${secenekListesi(e.master||"-")}</select> ${skor}</div>`;
 }
 $("#btn-esl-onayla").addEventListener("click",async()=>{
+  if(sonAnaliz&&sonAnaliz.mod==="formsuz"){
+    const girdiler={};
+    document.querySelectorAll("#t-elle input").forEach(inp=>{
+      if(inp.value!==""){ (girdiler[inp.dataset.m]=girdiler[inp.dataset.m]||{})[inp.dataset.f]=parseFloat(inp.value)||0; }
+    });
+    const r=await api("/api/formsuz/elle",{girdiler},"Kaydediliyor…");
+    if(!r)return;
+    await raporGoster(); adimGoster(5);
+    return;
+  }
   const eslesmeler={};
   document.querySelectorAll("#esl-icerik select").forEach(s=>eslesmeler[s.dataset.ss]=s.value);
   const j=await api("/api/eslestirme/kaydet",{eslesmeler},"Eşleştirmeler kaydediliyor…");

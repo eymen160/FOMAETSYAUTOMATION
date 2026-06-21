@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_file
 
 from lazer import (denetim, eslestirme, master, rapor, shipstation_api,
-                   shipstation_csv, urun_eslestirme)
+                   shipstation_csv, urun_eslestirme, formsuz)
 from lazer.yardimci import AYLAR, ay_no, tr_kucuk
 
 load_dotenv()
@@ -40,6 +40,7 @@ DURUM = {
     "son_rapor": None,
     "eslestirme_yolu": eslestirme.ESLESTIRME_DOSYASI,
     "demo": False,
+    "mod": "form",          # "form" (master beyanı) | "formsuz" (ham veriden)
 }
 
 
@@ -198,6 +199,82 @@ def yukle(tip):
     return jsonify({"tamam": True, "yol": yol})
 
 
+def _formsuz_analiz(ay, ay_adi, yil):
+    """Formsuz mod: rapor satırlarını ShipStation ham verisinden üretir.
+    Master/form gerektirmez; mağazalar verinin kendisinden gelir."""
+    _csv_otomatik_tani()
+    z_yol = DURUM["ozet_yolu"] if DURUM["ozet_yolu"] and os.path.exists(DURUM["ozet_yolu"]) else None
+    if not z_yol:
+        return _hata("Formsuz rapor için ShipStation sipariş özeti (Amount-Order "
+                     "Total kolonlu) yükleyin.")
+    uyarilar = []
+    try:
+        ozet_sonuc = shipstation_csv.ozet_isle(z_yol, ay, yil)
+    except shipstation_csv.CsvHata as e:
+        return _hata(str(e))
+    if ozet_sonuc["ay_satir_sayisi"] == 0:
+        return _hata(f"Sipariş özetinde {ay_adi} {yil} dönemine ait satır yok.")
+    if ozet_sonuc["kapsama"].get("uyari"):
+        uyarilar.append(ozet_sonuc["kapsama"]["uyari"])
+
+    kalem_sonuc = None
+    k_yol = DURUM["kalem_yolu"] if DURUM["kalem_yolu"] and os.path.exists(DURUM["kalem_yolu"]) else None
+    if k_yol:
+        try:
+            kalem_sonuc = urun_eslestirme.kalem_isle(k_yol, ay, yil)
+            kap = kalem_sonuc["kapsama"]
+            uyarilar.append(f"Ürün sınıflandırma: {kap['toplam']} adetin "
+                            f"%{kap['oran']*100:.0f}'i kategoriye eşlendi.")
+        except shipstation_csv.CsvHata as e:
+            uyarilar.append(f"Kalem detayı işlenemedi: {e}")
+    else:
+        uyarilar.append("Kalem detayı yok: ürün kolonları ve sipariş içeriği "
+                        "boş kalır (Item Name'li export yükleyin).")
+
+    eslesme = eslestirme.yukle(DURUM["eslestirme_yolu"])
+    elle = formsuz.elle_yukle().get(formsuz.donem_anahtari(yil, ay), {})
+    DURUM["mod"] = "formsuz"
+    DURUM["analiz"] = {
+        "ay": ay, "ay_adi": ay_adi.capitalize(), "yil": yil,
+        "ozet": ozet_sonuc, "kalem": kalem_sonuc, "elle": elle,
+        "mod": "formsuz",
+    }
+    # Rapor satırlarını üret (mağaza listesi + Amazon)
+    satirlar, amazon_liste, _ = formsuz.rapor_satirlari(
+        ozet_sonuc, kalem_sonuc, elle, eslesme, "subtotal_shipping")
+    magazalar = [s["magaza"] for s in satirlar]
+    if not magazalar:
+        uyarilar.append("Hiç (Amazon dışı) mağaza bulunamadı.")
+    return jsonify({
+        "mod": "formsuz", "ay": ay_adi.capitalize(), "yil": yil,
+        "magazalar": magazalar,
+        "magaza_sayisi": len(magazalar),
+        "uyarilar": uyarilar,
+        "iptal_iade": ozet_sonuc["iptal_iade"],
+        "kapsama": ozet_sonuc["kapsama"],
+        "amazon": amazon_liste,
+        "kalem_var": kalem_sonuc is not None,
+        "elle": elle,
+        "elle_alanlar": formsuz.ELLE_ALANLAR,
+    })
+
+
+@app.route("/api/formsuz/elle", methods=["POST"])
+def formsuz_elle():
+    """Reklam / İlave ödeme / Upgrade elle girdilerini kaydeder (dönem bazında)."""
+    a = DURUM["analiz"]
+    if not a or DURUM["mod"] != "formsuz":
+        return _hata("Önce formsuz analiz çalıştırın.")
+    veri = request.get_json(silent=True) or {}
+    girdiler = veri.get("girdiler") or {}
+    if not isinstance(girdiler, dict):
+        return _hata("Geçersiz girdi.")
+    dk = formsuz.donem_anahtari(a["yil"], a["ay"])
+    formsuz.elle_kaydet(dk, girdiler)
+    a["elle"] = formsuz.elle_yukle().get(dk, {})
+    return jsonify({"tamam": True, "kayitli": len(girdiler)})
+
+
 @app.route("/api/analiz", methods=["POST"])
 def analiz():
     veri = request.get_json(silent=True) or {}
@@ -209,6 +286,11 @@ def analiz():
         return _hata("Geçerli bir yıl seçin.")
     if not ay:
         return _hata("Geçerli bir ay seçin (örn. Mayıs).")
+
+    # Formsuz mod: master yok ya da kullanıcı 'ham veriden' seçti → rapor
+    # doğrudan ShipStation verisinden üretilir.
+    if veri.get("formsuz") or not _master_bul():
+        return _formsuz_analiz(ay, ay_adi, yil)
 
     m_yol = _master_bul()
     if not m_yol:
@@ -313,8 +395,9 @@ def analiz():
         "ozet": ozet_sonuc, "kalem": kalem_sonuc,
         "urun_basliklari": urun_basliklari,
         "urun_adetleri": urun_adetleri,
-        "master_yolu": m_yol,
+        "master_yolu": m_yol, "mod": "form",
     }
+    DURUM["mod"] = "form"
     iptal = list(orders_sonuc["iptal_iade"]) if orders_sonuc else []
     if ozet_sonuc:
         iptal += ozet_sonuc["iptal_iade"]
@@ -530,6 +613,14 @@ def _rapor_satirlari(kaynaklar, ciro_kaynagi, urun_kaynagi="form"):
     (kalem-bazlı otomatik sınıflandırma). Dönüş: (satirlar, ss_veri,
     amazon_liste, urun_basliklari, kaynak_kullanim)."""
     a = DURUM["analiz"]
+    if a.get("mod") == "formsuz":
+        eslesme = eslestirme.yukle(DURUM["eslestirme_yolu"])
+        satirlar, amazon_liste, urun_basliklari = formsuz.rapor_satirlari(
+            a.get("ozet"), a.get("kalem"), a.get("elle"), eslesme, ciro_kaynagi)
+        # Formsuz modda finansal kolonlar her zaman ham veriden gelir
+        kaynak_kullanim = {al: "shipstation" for al in
+                           ("ciro", "vergi", "kargo_musteri", "kargo", "adet")}
+        return satirlar, {}, amazon_liste, urun_basliklari, kaynak_kullanim
     ss_veri, amazon_liste, _ = _ss_master_bazinda()
     urun_basliklari = list(a.get("urun_basliklari") or [])
     urun_map = a.get("urun_adetleri") or {}
@@ -736,12 +827,15 @@ def sonuc():
     islenen_siparis = 0
     if ozet:
         islenen_siparis = sum(v["siparis_sayisi"] for v in ozet["magazalar"].values())
-    eslesen = len([s for s in tablo if (ss_veri.get(s["magaza"]) or {})])
     toplam_magaza = len(tablo)
-    # Otomatik (ShipStation'dan) vs manuel (formdan) kolon sayısı
+    if a.get("mod") == "formsuz":
+        eslesen = toplam_magaza   # satırlar zaten ham veriden geliyor
+    else:
+        eslesen = len([s for s in tablo if (ss_veri.get(s["magaza"]) or {})])
+    # Otomatik (ShipStation'dan) vs manuel kolon sayısı
     finansal_alanlar = ["ciro", "vergi", "kargo_musteri", "kargo", "adet"]
     oto = sum(1 for f in finansal_alanlar if kaynak_kullanim.get(f) == "shipstation")
-    manuel = len(finansal_alanlar) - oto + 2  # +REKLAM +İLAVE ÖDEME (hep form)
+    manuel = len(finansal_alanlar) - oto + 2  # +REKLAM +İLAVE ÖDEME
     ceo = {
         "islenen_siparis": islenen_siparis,
         "toplam_ciro": round(toplam["ciro"]),

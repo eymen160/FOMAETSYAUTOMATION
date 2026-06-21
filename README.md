@@ -20,6 +20,22 @@ pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 
+
+## Formsuz mod (master form olmadan)
+
+Master form yoksa rapor doğrudan ham veriden üretilir. Dönem adımında
+**"Ham veriden üret (master form yok)"** kutusunu işaretleyin:
+- **Ciro** = ShipStation Subtotal + müşteri kargosu (vergisiz)
+- **Vergi** = satış vergisi (Tax Paid), **Kargo** = ShipStation kargo maliyeti
+- **Parça adedi + ürün kolonları + sipariş içeriği** = kalem detayından otomatik
+- **Reklam / İlave ödeme / Upgrade** = ekranda elle girilir (dönem bazında
+  `elle_girdi.json`'a kaydedilir; Etsy Ads/hesap özeti eklenince reklam
+  otomatikleşebilir)
+- Mağazalar verinin kendisinden gelir; Amazon mağazaları "Rapor Dışı".
+
+Gereken dosyalar (formsuz): ShipStation **sipariş özeti** (Amount-Order Total
+kolonlu) + **kalem detayı** (Item Name/SKU'lu export).
+
 ## Kurulum
 
 1. Python 3.11+ kurulu olmalı.
