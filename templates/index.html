@@ -177,11 +177,13 @@ tr.toplam td{font-weight:800;background:var(--zemin);border-top:2px solid var(--
     <div class="satir">
       <div class="veri-kutu" id="vk-master"><div class="ikon">📋</div><div><b>Master form</b><span id="vk-master-ad">—</span></div></div>
       <div class="veri-kutu" id="vk-ozet"><div class="ikon">📦</div><div><b>ShipStation sipariş özeti</b><span id="vk-ozet-ad">—</span></div></div>
+      <div class="veri-kutu" id="vk-kalem"><div class="ikon">🏷️</div><div><b>Kalem detayı (ürün/SKU)</b><span id="vk-kalem-ad">—</span></div></div>
     </div>
     <div id="p2-kendi" class="gizli">
       <div class="kaynaklar" style="margin-top:16px">
         <label><b>Master (.xlsx):</b> <input type="file" id="f-master" accept=".xlsx"></label>
         <label><b>Sipariş özeti / Orders (.csv):</b> <input type="file" id="f-orders" accept=".csv"></label>
+        <label><b>Kalem detayı (Item Name'li export, .csv):</b> <input type="file" id="f-kalem" accept=".csv"></label>
       </div>
     </div>
     <div id="p2-uyari"></div>
@@ -206,6 +208,19 @@ tr.toplam td{font-weight:800;background:var(--zemin);border-top:2px solid var(--
     <div id="kalibrasyon"></div>
     <div class="kaynaklar" id="kaynaklar"></div>
     <div class="tablosar"><table id="t-denetim"></table></div>
+
+    <div id="urun-denetim-blok" class="gizli" style="margin-top:26px">
+      <h2>Ürün denetimi — form beyanı vs ShipStation SKU sınıflandırma</h2>
+      <p class="alt2">Kalem detayındaki ürün adları otomatik kategoriye sınıflanır. <span id="urun-kapsama" class="notmetin"></span></p>
+      <div class="kaynaklar">
+        <b style="font-size:13.5px">Rapor ürün kolonu kaynağı:</b>
+        <label><input type="radio" name="urun-kaynagi" value="form" checked> Form beyanı</label>
+        <label><input type="radio" name="urun-kaynagi" value="shipstation"> ShipStation (otomatik SKU)</label>
+      </div>
+      <div class="tablosar"><table id="t-urun-denetim"></table></div>
+      <div id="sku-ogret" style="margin-top:16px"></div>
+    </div>
+
     <div class="aksiyon"><button class="acc" id="btn-rapor-uret">Raporu oluştur →</button></div>
   </section>
 
@@ -309,9 +324,10 @@ async function analizCalistir(otomatik){
 /* ---- adım 2: veri durumu ---- */
 function durumGoster(){
   fetch("/api/durum").then(r=>r.json()).then(s=>{
-    const mk=$("#vk-master"),ok=$("#vk-ozet");
+    const mk=$("#vk-master"),ok=$("#vk-ozet"),kk=$("#vk-kalem");
     if(s.master){mk.classList.add("dolu");$("#vk-master-ad").textContent="✓ "+s.master;}
     if(s.orders){ok.classList.add("dolu");$("#vk-ozet-ad").textContent="✓ "+s.orders;}
+    if(s.kalem){kk.classList.add("dolu");$("#vk-kalem-ad").textContent="✓ "+s.kalem;}
   });
 }
 $("#btn-p2-devam").addEventListener("click",()=>{ if(sonAnaliz) adimGoster(3); else mesaj("Önce analiz çalıştırın.","uyari"); });
@@ -329,6 +345,7 @@ async function dosyaYukle(tip,inp){
 }
 $("#f-master")&&$("#f-master").addEventListener("change",e=>dosyaYukle("master",e.target));
 $("#f-orders")&&$("#f-orders").addEventListener("change",e=>dosyaYukle("orders",e.target));
+$("#f-kalem")&&$("#f-kalem").addEventListener("change",e=>dosyaYukle("kalem",e.target));
 
 /* ---- adım 3: eşleştirme ---- */
 function secenekListesi(secili){
@@ -423,7 +440,46 @@ async function denetimYukle(){
     html+="</tr>";
   });
   $("#t-denetim").innerHTML=html;
+  if(sonAnaliz&&sonAnaliz.kalem_var){ $("#urun-denetim-blok").classList.remove("gizli"); urunDenetimYukle(); }
+  else { $("#urun-denetim-blok").classList.add("gizli"); }
 }
+
+let sonUrunKat=[];
+async function urunDenetimYukle(){
+  const j=await api("/api/urun/denetim",{},"Ürünler sınıflanıyor…");
+  if(!j)return;
+  sonUrunKat=j.kategoriler||[];
+  const k=j.kapsama;
+  $("#urun-kapsama").textContent=`${k.toplam} adetin %${Math.round(k.oran*100)}'i bilinen kategoriye eşlendi, kalanı "Diğer Ürün".`;
+  let h="<tr><th>Mağaza</th><th>Form toplam</th><th>ShipStation (oto)</th><th>Sapma</th></tr>";
+  j.tablo.forEach(s=>{
+    const c=s.renk==="sari"?"sari":s.renk==="kirmizi"?"kirmizi":"";
+    h+=`<tr><td class="ad">${s.magaza}</td><td>${tl(s.form_toplam)}</td><td>${tl(s.oto_toplam)}</td><td class="${c}">${pct(s.sapma)}</td></tr>`;
+  });
+  $("#t-urun-denetim").innerHTML=h;
+  // Bilinmeyen SKU öğretme
+  if(j.bilinmeyen&&j.bilinmeyen.length){
+    const opt=sonUrunKat.map(c=>`<option>${c}</option>`).join("");
+    let s=`<b style="font-size:13.5px">Bilinmeyen SKU'ları öğret</b> <span class="notmetin">(Diğer Ürün'e düşenler; eşleyince sözlüğe kaydedilir ve sonraki aylarda otomatik tanınır)</span>`;
+    j.bilinmeyen.forEach(([sku,adet])=>{
+      const skuKod=sku.split("|")[0].trim();
+      s+=`<div class="esl-kart"><span class="ss">${sku} <span class="notmetin">(${adet})</span></span><span class="ok">→</span>
+        <select data-sku="${skuKod.replace(/"/g,'&quot;')}"><option value="">— seç —</option>${opt}</select></div>`;
+    });
+    s+=`<button class="acc" id="btn-sku-ogret" style="margin-top:6px">Seçilenleri öğret</button>`;
+    $("#sku-ogret").innerHTML=s;
+    $("#btn-sku-ogret").addEventListener("click",async()=>{
+      const esl={};
+      document.querySelectorAll('#sku-ogret select[data-sku]').forEach(x=>{ if(x.value) esl[x.dataset.sku]=x.value; });
+      if(!Object.keys(esl).length){mesaj("Önce en az bir SKU için kategori seçin.","uyari");return;}
+      const r=await api("/api/urun/ogret",{eslesmeler:esl},"Öğretiliyor…");
+      if(r){mesaj(r.ogretilen+" SKU öğretildi.","bilgi"); urunDenetimYukle();}
+    });
+  } else { $("#sku-ogret").innerHTML=""; }
+}
+function urunKaynagi(){ const r=document.querySelector('input[name="urun-kaynagi"]:checked'); return r?r.value:"form"; }
+document.addEventListener("change",e=>{ if(e.target.name==="urun-kaynagi") {/* rapor adımında uygulanır */} });
+
 $("#btn-rapor-uret").addEventListener("click",async()=>{
   await raporGoster(); adimGoster(5);
 });
@@ -431,7 +487,7 @@ $("#btn-rapor-uret").addEventListener("click",async()=>{
 /* ---- adım 5: sonuç + CEO ---- */
 function kaynaklarTopla(){
   const k={};document.querySelectorAll('#kaynaklar select[data-alan]').forEach(s=>k[s.dataset.alan]=s.value);
-  return {kaynaklar:k,ciro_kaynagi:($("#ciro-kaynagi")||{}).value};
+  return {kaynaklar:k,ciro_kaynagi:($("#ciro-kaynagi")||{}).value,urun_kaynagi:urunKaynagi()};
 }
 async function raporGoster(){
   const cfg=kaynaklarTopla();
@@ -451,7 +507,10 @@ async function raporGoster(){
     ${kart("Amazon (rapor dışı)",tl(c.amazon_siparis)+" sipariş","ayrı listelenir")}`;
   $("#ceo-serit").innerHTML=`⏱ Tahmini zaman tasarrufu: <b style="margin-left:6px">${c.zaman_tasarrufu}</b>`;
   raporTablo(s);
-  $("#urun-notu").innerHTML=`Ürün adetleri (${s.urun_basliklari.length} ürün kolonu) form beyanından raporun sağ tarafına yazılır. <b>Otomatik SKU sınıflandırma yol haritasında.</b>`;
+  const uk=urunKaynagi();
+  $("#urun-notu").innerHTML = uk==="shipstation"
+    ? `Ürün adetleri (${s.urun_basliklari.length} kolon) <b>ShipStation kalem verisinden otomatik SKU sınıflandırma</b> ile dolduruldu (Diğer Ürün dahil).`
+    : `Ürün adetleri (${s.urun_basliklari.length} kolon) <b>form beyanından</b> yazıldı. Kalem detayı yüklersen otomatik SKU sınıflandırmaya geçebilirsin.`;
   $("#amazon-notu").innerHTML = s.amazon&&s.amazon.length
     ? `<div class="uyari">Rapor dışı (Amazon): ${s.amazon.map(a=>`${a.magaza} (${tl(a.siparis)} sipariş)`).join(" · ")}</div>` : "";
 }

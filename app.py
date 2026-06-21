@@ -7,7 +7,8 @@ import traceback
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_file
 
-from lazer import denetim, eslestirme, master, rapor, shipstation_api, shipstation_csv
+from lazer import (denetim, eslestirme, master, rapor, shipstation_api,
+                   shipstation_csv, urun_eslestirme)
 from lazer.yardimci import AYLAR, ay_no, tr_kucuk
 
 load_dotenv()
@@ -20,6 +21,7 @@ CIKTI_KLASORU = "cikti"
 DEMO_KLASORU = "demo"
 DEMO_MASTER = os.path.join(DEMO_KLASORU, "demo_master_form.xlsx")
 DEMO_OZET = os.path.join(DEMO_KLASORU, "demo_siparis_ozeti.csv")
+DEMO_KALEM = os.path.join(DEMO_KLASORU, "demo_kalem_detay.csv")
 DEMO_ESLESTIRME = os.path.join(DEMO_KLASORU, "store_mapping.json")
 DEMO_AY, DEMO_YIL = "Mayıs", 2026
 os.makedirs(YUKLEME_KLASORU, exist_ok=True)
@@ -30,6 +32,7 @@ DURUM = {
     "master_yolu": None,
     "orders_yolu": None,
     "ozet_yolu": None,     # sipariş özeti raporu (maliyet dahil, sipariş bazlı)
+    "kalem_yolu": None,    # kalem-bazlı export (Store+Item Name+Qty+SKU → ürün)
     "shipments_yolu": None,
     "maliyet_csv_yolu": None,
     "analiz": None,        # son analiz sonucu (ay, yıl, kayıtlar, ss verisi…)
@@ -74,8 +77,12 @@ def _csv_otomatik_tani():
         except shipstation_csv.CsvHata:
             continue
         basliklar = set(satirlar[0].keys())
+        kalem = ("Item Name" in basliklar and "Store" in basliklar
+                 and ("Item Quantity" in basliklar or "Quantity" in basliklar))
         if "Amount - Order Total" in basliklar and DURUM["ozet_yolu"] is None:
             DURUM["ozet_yolu"] = yol
+        elif kalem and DURUM["kalem_yolu"] is None:
+            DURUM["kalem_yolu"] = yol      # kalem detayı (ürün sınıflandırma)
         elif "Order Total" in basliklar and DURUM["orders_yolu"] is None:
             DURUM["orders_yolu"] = yol
         elif "Shipment #" in basliklar and "Order Total" not in basliklar \
@@ -104,6 +111,7 @@ def demo_yukle():
     # Temiz başlangıç (önceki yüklemeler demo'yu etkilemesin)
     DURUM.update({
         "master_yolu": DEMO_MASTER, "ozet_yolu": DEMO_OZET,
+        "kalem_yolu": DEMO_KALEM if os.path.exists(DEMO_KALEM) else None,
         "orders_yolu": None, "shipments_yolu": None, "maliyet_csv_yolu": None,
         "kargo": None, "analiz": None, "son_rapor": None,
         "eslestirme_yolu": DEMO_ESLESTIRME if os.path.exists(DEMO_ESLESTIRME)
@@ -128,6 +136,7 @@ def durum():
     return jsonify({
         "master": m,
         "orders": _orders_bul() or DURUM["ozet_yolu"],
+        "kalem": DURUM["kalem_yolu"],
         "shipments": _shipments_bul(),
         "maliyet_csv": DURUM["maliyet_csv_yolu"],
         "api_anahtari_var": bool(os.environ.get("SHIPSTATION_API_KEY")),
@@ -142,7 +151,7 @@ def durum():
 
 @app.route("/api/yukle/<tip>", methods=["POST"])
 def yukle(tip):
-    if tip not in ("master", "orders", "shipments", "maliyet"):
+    if tip not in ("master", "orders", "shipments", "maliyet", "kalem"):
         return _hata("Bilinmeyen dosya tipi.")
     f = request.files.get("dosya")
     if not f or not f.filename:
@@ -152,6 +161,7 @@ def yukle(tip):
         DURUM["eslestirme_yolu"] = eslestirme.ESLESTIRME_DOSYASI
         DURUM["ozet_yolu"] = None
         DURUM["master_yolu"] = None
+        DURUM["kalem_yolu"] = None
     uzanti = os.path.splitext(f.filename)[1].lower()
     if tip == "master" and uzanti != ".xlsx":
         return _hata("Master dosyası .xlsx olmalı.")
@@ -175,6 +185,11 @@ def yukle(tip):
         elif tip == "shipments":
             shipstation_csv.shipments_isle(yol)
             DURUM["shipments_yolu"] = yol
+        elif tip == "kalem":
+            if not urun_eslestirme.kalem_format_mu(yol):
+                return _hata("Kalem detayı dosyası 'Store', 'Item Name' ve "
+                             "'Quantity' kolonlarını içermeli.")
+            DURUM["kalem_yolu"] = yol
         else:
             DURUM["maliyet_csv_yolu"] = yol
     except (master.MasterHata, shipstation_csv.CsvHata) as e:
@@ -259,6 +274,24 @@ def analiz():
         except shipstation_csv.CsvHata as e:
             uyarilar.append(f"Shipments CSV işlenemedi: {e}")
 
+    # Ürün/SKU sınıflandırma (kalem-bazlı export'tan)
+    kalem_sonuc = None
+    k_yol = DURUM["kalem_yolu"] if DURUM["kalem_yolu"] and os.path.exists(DURUM["kalem_yolu"]) else None
+    if k_yol:
+        try:
+            kalem_sonuc = urun_eslestirme.kalem_isle(k_yol, ay, yil)
+            kap = kalem_sonuc["kapsama"]
+            if kap["toplam"] == 0:
+                uyarilar.append(f"Kalem detayında {ay_adi} {yil} dönemine ait satır "
+                                "yok (tarih filtresini kontrol edin).")
+            else:
+                uyarilar.append(
+                    f"Ürün/SKU sınıflandırma: {kap['toplam']} adetin "
+                    f"%{kap['oran']*100:.0f}'i bilinen kategoriye eşlendi; "
+                    "kalanı 'Diğer Ürün'. Bilinmeyen SKU'ları öğretebilirsiniz.")
+        except shipstation_csv.CsvHata as e:
+            uyarilar.append(f"Kalem detayı işlenemedi: {e}")
+
     # Mağaza eşleştirme önerileri
     ss_adlari = set()
     if orders_sonuc:
@@ -267,6 +300,8 @@ def analiz():
         ss_adlari |= set(ozet_sonuc["magazalar"].keys())
     if shipments_sonuc:
         ss_adlari |= set(shipments_sonuc["gonderi_sayisi"].keys())
+    if kalem_sonuc:
+        ss_adlari |= set(kalem_sonuc["magaza_urun"].keys())
     master_adlari = [k["magaza"] for k in kayitlar]
     mevcut_eslesme = eslestirme.yukle(DURUM["eslestirme_yolu"])
     oneriler = eslestirme.oneri_uret(ss_adlari, master_adlari, mevcut_eslesme)
@@ -275,7 +310,7 @@ def analiz():
         "ay": ay, "ay_adi": ay_adi.capitalize(), "yil": yil,
         "kayitlar": kayitlar, "bozuk": bozuk,
         "orders": orders_sonuc, "shipments": shipments_sonuc,
-        "ozet": ozet_sonuc,
+        "ozet": ozet_sonuc, "kalem": kalem_sonuc,
         "urun_basliklari": urun_basliklari,
         "urun_adetleri": urun_adetleri,
         "master_yolu": m_yol,
@@ -295,6 +330,7 @@ def analiz():
         "orders_var": orders_sonuc is not None,
         "ozet_var": ozet_sonuc is not None,
         "shipments_var": shipments_sonuc is not None,
+        "kalem_var": kalem_sonuc is not None,
     })
 
 
@@ -467,14 +503,46 @@ def _kaynak_varsayilan(a):
     return "subtotal_shipping" if a.get("ozet") else "order_total"
 
 
-def _rapor_satirlari(kaynaklar, ciro_kaynagi):
+def _urun_master_bazinda():
+    """Kalem-bazlı otomatik ürün adetlerini master mağaza adına çevirir.
+    Dönüş: {master_magaza: {kategori: adet}}  (Amazon ve eşleşmeyen hariç)."""
+    a = DURUM["analiz"]
+    kalem = a.get("kalem")
+    if not kalem:
+        return {}
+    eslesme = eslestirme.yukle(DURUM["eslestirme_yolu"])
+    sonuc = {}
+    for ss_ad, urunler in kalem["magaza_urun"].items():
+        hedef = eslesme.get(ss_ad.strip())
+        if hedef is None and shipstation_csv.amazon_mu(ss_ad):
+            continue  # Amazon rapora girmez
+        if hedef is None or hedef in ("-", eslestirme.AMAZON_ETIKETI):
+            continue
+        d = sonuc.setdefault(hedef, {})
+        for kat, adet in urunler.items():
+            d[kat] = d.get(kat, 0) + adet
+    return sonuc
+
+
+def _rapor_satirlari(kaynaklar, ciro_kaynagi, urun_kaynagi="form"):
     """Rapor + ekran tablosu için ortak satır üretimi. Kaynak seçimini ve
-    ürün adetlerini (form beyanından) uygular. Dönüş: (satirlar, ss_veri,
+    ürün adetlerini uygular. urun_kaynagi: 'form' (beyan) veya 'shipstation'
+    (kalem-bazlı otomatik sınıflandırma). Dönüş: (satirlar, ss_veri,
     amazon_liste, urun_basliklari, kaynak_kullanim)."""
     a = DURUM["analiz"]
     ss_veri, amazon_liste, _ = _ss_master_bazinda()
-    urun_basliklari = a.get("urun_basliklari") or []
+    urun_basliklari = list(a.get("urun_basliklari") or [])
     urun_map = a.get("urun_adetleri") or {}
+    # ShipStation otomatik ürün adetleri (kalem-bazlı), seçilirse kullan
+    if urun_kaynagi == "shipstation" and a.get("kalem"):
+        oto = _urun_master_bazinda()
+        urun_map = {m: {k: d.get(k, 0) for k in urun_basliklari}
+                    for m, d in oto.items()}
+        if urun_eslestirme.DIGER not in urun_basliklari:
+            urun_basliklari.append(urun_eslestirme.DIGER)
+        for m, d in oto.items():
+            urun_map.setdefault(m, {})[urun_eslestirme.DIGER] = d.get(
+                urun_eslestirme.DIGER, 0)
     kaynak_kullanim = {}
     satirlar = []
     for kayit in sorted(a["kayitlar"], key=lambda k: tr_kucuk(k["magaza"])):
@@ -502,6 +570,61 @@ def _rapor_satirlari(kaynaklar, ciro_kaynagi):
     return satirlar, ss_veri, amazon_liste, urun_basliklari, kaynak_kullanim
 
 
+@app.route("/api/urun/denetim", methods=["POST"])
+def urun_denetim():
+    """Ürün adetleri: form beyanı vs ShipStation otomatik sınıflandırma,
+    master mağaza + kategori bazında, sapma renklendirmeli."""
+    a = DURUM["analiz"]
+    if not a:
+        return _hata("Önce analiz çalıştırın.")
+    if not a.get("kalem"):
+        return _hata("Ürün denetimi için kalem detayı (Item Name'li export) "
+                     "yükleyin.")
+    basliklar = list(a.get("urun_basliklari") or [])
+    if urun_eslestirme.DIGER not in basliklar:
+        basliklar.append(urun_eslestirme.DIGER)
+    form_map = a.get("urun_adetleri") or {}
+    oto_map = _urun_master_bazinda()
+    tablo = []
+    for magaza in sorted(set(form_map) | set(oto_map), key=tr_kucuk):
+        f = form_map.get(magaza, {})
+        o = oto_map.get(magaza, {})
+        f_top = sum(f.get(k, 0) for k in basliklar)
+        o_top = sum(o.get(k, 0) for k in basliklar)
+        taban = max(f_top, o_top)
+        sapma = abs(f_top - o_top) / taban if taban else 0
+        tablo.append({
+            "magaza": magaza, "form_toplam": f_top, "oto_toplam": o_top,
+            "sapma": round(sapma, 3), "renk": denetim.renk(sapma),
+            "kategoriler": {k: {"form": f.get(k, 0), "oto": o.get(k, 0)}
+                            for k in basliklar
+                            if f.get(k, 0) or o.get(k, 0)},
+        })
+    return jsonify({
+        "tablo": tablo, "basliklar": basliklar,
+        "kapsama": a["kalem"]["kapsama"],
+        "bilinmeyen": list(a["kalem"]["bilinmeyen"].items())[:30],
+        "kategoriler": urun_eslestirme.KATEGORILER,
+    })
+
+
+@app.route("/api/urun/ogret", methods=["POST"])
+def urun_ogret():
+    """Bilinmeyen SKU'yu bir kategoriye öğret (urun_mapping.json'a yazılır,
+    sonraki sınıflandırmalarda otomatik kullanılır)."""
+    veri = request.get_json(silent=True) or {}
+    eslesmeler = veri.get("eslesmeler") or {}
+    if not isinstance(eslesmeler, dict) or not eslesmeler:
+        return _hata("Geçersiz veya boş eşleştirme.")
+    urun_eslestirme.kaydet(eslesmeler)
+    # Kalem'i yeni sözlükle yeniden sınıflandır
+    a = DURUM["analiz"]
+    if a and DURUM["kalem_yolu"]:
+        a["kalem"] = urun_eslestirme.kalem_isle(
+            DURUM["kalem_yolu"], a["ay"], a["yil"])
+    return jsonify({"tamam": True, "ogretilen": len(eslesmeler)})
+
+
 @app.route("/api/rapor", methods=["POST"])
 def rapor_uret_endpoint():
     a = DURUM["analiz"]
@@ -510,8 +633,9 @@ def rapor_uret_endpoint():
     veri = request.get_json(silent=True) or {}
     kaynaklar = veri.get("kaynaklar") or {}
     ciro_kaynagi = veri.get("ciro_kaynagi") or _kaynak_varsayilan(a)
+    urun_kaynagi = veri.get("urun_kaynagi") or "form"
     satirlar, _, amazon_liste, urun_basliklari, _ = _rapor_satirlari(
-        kaynaklar, ciro_kaynagi)
+        kaynaklar, ciro_kaynagi, urun_kaynagi)
 
     eslesmeyen = DURUM["kargo"]["eslesmeyen"] if DURUM["kargo"] else None
     dosya_adi = f"Lazer_Grubu_Rapor_{a['yil']}_{a['ay_adi'].upper()}.xlsx"
@@ -537,8 +661,9 @@ def sonuc():
     veri = request.get_json(silent=True) or {}
     kaynaklar = veri.get("kaynaklar") or {}
     ciro_kaynagi = veri.get("ciro_kaynagi") or _kaynak_varsayilan(a)
+    urun_kaynagi = veri.get("urun_kaynagi") or "form"
     satirlar, ss_veri, amazon_liste, urun_basliklari, kaynak_kullanim = \
-        _rapor_satirlari(kaynaklar, ciro_kaynagi)
+        _rapor_satirlari(kaynaklar, ciro_kaynagi, urun_kaynagi)
 
     # Ekran tablosu: finansal kolonları sayısal hesapla (Excel ile birebir)
     tablo, toplam = [], {"ciro": 0.0, "vergi": 0.0, "reklam": 0.0,

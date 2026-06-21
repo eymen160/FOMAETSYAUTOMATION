@@ -9,9 +9,12 @@ store_id_mapping.json
 yuklenen/
 cikti/
 
+urun_mapping.json
+
 # Demo verisi (tek-tık sunum) — müşteri adı/adresi İÇERMEZ
 !demo/
 !demo/demo_master_form.xlsx
 !demo/demo_siparis_ozeti.csv
+!demo/demo_kalem_detay.csv
 !demo/store_mapping_baseline.json
 # (demo/store_mapping.json çalışma anında baseline'dan üretilir → izlenmez)
