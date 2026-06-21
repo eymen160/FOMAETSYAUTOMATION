@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 store_mapping.json
 store_id_mapping.json
+sku_katalog.json
 yuklenen/
 cikti/
 
