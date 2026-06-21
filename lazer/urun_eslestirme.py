@@ -20,6 +20,67 @@ KURALLAR = [
     ("Multi Knife", [r"multi.?tool|multi.?function|pocket knife|folding knife|"
                      r"hunting knife|utility knife|edc knife"]),
     ("Photo Frame", [r"photo frame|picture frame"]),
+    # --- yüksek hacimli ek kategoriler (2026-06 ham veri analizinden) ---
+    ("Cooling Towel", [r"cooling towel"]),
+    ("Beach Towel", [r"beach towel|pool towel|swim towel|bachelorette towel|"
+                     r"bridal.*towel|bride.*towel|team towel|sport.*towel|"
+                     r"monogram.*towel|custom.*towel|personali[sz]ed.*towel|"
+                     r"stripe.*towel|\btowel\b"]),
+    ("Blanket", [r"blanket|throw blanket|fleece blanket|sherpa"]),
+    ("Puzzle", [r"puzzle|jigsaw"]),
+    ("Name Plate", [r"name\s*plate|nameplate|desk\s*name|desk\s*plate|"
+                    r"name\s*wedge|desk\s*wedge"]),
+    ("T-Shirt", [r"\bt-?shirts?\b|\btees?\b|\bshirts?\b|sweat ?shirt|hoodie"]),
+    ("Luggage Tag", [r"luggage tag|bag tag|suitcase tag"]),
+    ("Card & Dice Set", [r"card\s*&?\s*dice|dice set"]),
+    ("BBQ Set", [r"\bbbq\b|barbecue|grill (set|tool|kit)|grilling (set|tool)"]),
+    ("Shot Glass", [r"shot glass"]),
+    ("Phone Stand", [r"phone stand|phone holder|phone dock|phone cradle"]),
+    ("Cord Case", [r"cord case|cable case|cord organizer|cable organizer|"
+                   r"cord keeper|cord roll"]),
+    ("Photo Clip", [r"photo clip|visor clip|car visor"]),
+    ("Keychain", [r"keychain|key chain|key ?ring|key fob|keyfob"]),
+    # --- ikinci tur: kalan yüksek hacimli kategoriler ---
+    ("Hat", [r"\bhat\b|\bcap\b|trucker|snapback|beanie|baseball cap|dad hat|"
+             r"leather patch hat"]),
+    ("Desk Organizer", [r"desk organi[sz]er|office organi[sz]er|"
+                        r"pen organi[sz]er|stationery organi[sz]er|desk caddy|"
+                        r"office desk accessor|wood desk organi[sz]er"]),
+    ("Whiskey Stones", [r"whiskey stones?|whisky stones?|chilling stones?|"
+                        r"ice stones?|whiskey rocks?|whisky rocks?"]),
+    ("Pen Set", [r"pen set|pen holder|wood pen|wooden pen|engraved pen|"
+                 r"fountain pen|\bpen\b"]),
+    ("Mouse Pad", [r"mouse ?pad|desk pad|desk mat"]),
+    ("Rug", [r"\brug\b|area rug|floor mat|door ?mat|chenille|step rug"]),
+    ("Crossbody Bag", [r"crossbody|cross body|sling bag|phone pouch|"
+                       r"phone bag|phone crossbody|leather sling|half moon bag|"
+                       r"crescent.*bag"]),
+    ("Cooler Bag", [r"cooler bag|cooler backpack|insulated bag|lunch bag|"
+                    r"cooler tote|insulated cooler"]),
+    ("Beer Can Glass", [r"can glass|beer can glass"]),
+    ("Grooming Set", [r"manicure set|manicure kit|nail care|nail clipper|"
+                      r"grooming kit|grooming set"]),
+    ("Ammo Can", [r"ammo can|ammunition can|ammo box"]),
+    ("Cigar Case", [r"cigar case|cigar box|cigar holder|cigar ashtray|"
+                    r"cigar humidor|\bhumidor\b|cigar travel"]),
+    ("Pizza Board", [r"pizza board|pizza paddle|pizza peel"]),
+    ("Fabric", [r"\bfabric\b|quilting cotton|by the yard|fat quarter|"
+                r"fleece velvet|sewing fabric"]),
+    ("Pet Bowl", [r"pet bowl|dog bowl|cat bowl|dog cat bowl|pet feeder|"
+                  r"food bowl"]),
+    ("Cribbage Set", [r"cribbage"]),
+    ("Apron", [r"\bapron\b"]),
+    ("Tapestry", [r"tapestry|woven throw|woven wall|wall hanging"]),
+    ("Clipboard", [r"clipboard"]),
+    ("Ring Dish", [r"ring dish|jewelry dish|trinket dish|ring holder"]),
+    ("Christmas Stocking", [r"christmas stocking|holiday stocking|"
+                            r"\bstocking\b"]),
+    ("Engraving Upgrade", [r"engraving upgrade|engrave upgrade|express cargo|"
+                           r"new upgrade|two side engrave|\bupgrade\b"]),
+    ("Shipping Upgrade", [r"shipping fee|shipping price|shipping cost|"
+                          r"shipping service|day shipping|express shipping|"
+                          r"expedited|\bups\b|\bfedex\b|\bdhl\b|priority mail|"
+                          r"rush order|\breship\b|shipping price"]),
     ("Pocket Mirror", [r"pocket mirror|compact mirror"]),
     ("Cake Pan", [r"cake pan"]),
     ("Cutting Board", [r"cutting board|charcuterie|chopping board"]),
@@ -59,7 +120,9 @@ KURALLAR = [
     ("40 oz Tmblr", [r"40\s?oz"]),
     ("20 oz Tmblr", [r"20\s?oz|30\s?oz|tumbler with handle|insulated tumbler|"
                      r"travel tumbler|\btumbler\b|\btmblr\b"]),
-    ("Water Bottle", [r"water bottle|sports bottle|insulated bottle"]),
+    ("Bottle Opener", [r"bottle opener"]),
+    ("Water Bottle", [r"water bottle|sports bottle|insulated bottle|"
+                      r"names? bottle|\bbottle\b"]),
     ("Lighter", [r"lighter"]),
     ("Ornoment", [r"ornament|ornoment"]),
     ("Coffee Mug", [r"\bcup\b"]),  # son çare: jenerik "cup"

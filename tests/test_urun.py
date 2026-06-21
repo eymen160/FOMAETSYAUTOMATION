@@ -37,7 +37,7 @@ def test_siniflandir_keyword(ad, beklenen):
 
 def test_siniflandir_bilinmeyen():
     # Taksonomi dışı ürün → None (Diğer Ürün'e gider)
-    assert ue.siniflandir("Personalized Beach Towel, Swim Gift", "TWL1", {}) is None
+    assert ue.siniflandir("Unclassifiable Test Item ZZZ", "ZZZ1", {}) is None
 
 
 def test_sku_sozlugu_oncelik():
@@ -61,7 +61,7 @@ def kalem_csv(tmp_path):
     satirlar = [
         ["1", "05/03/2026", "Shop A", "Custom Glass Coffee Mug", "2", "GCM1"],
         ["2", "05/04/2026", "Shop A", "Personalized 40oz Tumbler", "1", "T40"],
-        ["3", "05/05/2026", "Shop A", "Personalized Beach Towel", "3", "TWL"],
+        ["3", "05/05/2026", "Shop A", "Unclassifiable Test Item ZZZ", "3", "ZZZ"],
         ["4", "04/30/2026", "Shop A", "Custom Lighter", "5", "LTR"],   # ay dışı
         ["5", "05/06/2026", "Shop B", "(3 Items)", "3", "(3 Items)"],  # gruplu→atla
         ["6", "05/07/2026", "Shop B", "Custom Wine Glass", "4", "WG1"],
@@ -83,7 +83,7 @@ def test_kalem_isle_siniflama(kalem_csv):
     a = s["magaza_urun"]["Shop A"]
     assert a["Glass Cofe-Mug"] == 2
     assert a["40 oz Tmblr"] == 1
-    assert a[ue.DIGER] == 3          # beach towel
+    assert a[ue.DIGER] == 3          # sınıflanamayan test ürünü
     assert "Lighter" not in a        # ay dışı (04/30) hariç
 
 
@@ -103,12 +103,12 @@ def test_kalem_isle_kapsama(kalem_csv):
 
 def test_kalem_isle_bilinmeyen_listesi(kalem_csv):
     s = ue.kalem_isle(kalem_csv, 5, 2026, {})
-    assert any("TWL" in k or "Beach Towel" in k for k in s["bilinmeyen"])
+    assert any("ZZZ" in k for k in s["bilinmeyen"])
 
 
 def test_ogrenilmis_sku_kalemde(kalem_csv):
-    # Beach towel SKU'sunu Diğer dışında bir kategoriye öğret → öyle sınıflanır
-    s = ue.kalem_isle(kalem_csv, 5, 2026, {"TWL": "Coaster"})
+    # Bilinmeyen SKU'yu Diğer dışında bir kategoriye öğret → öyle sınıflanır
+    s = ue.kalem_isle(kalem_csv, 5, 2026, {"ZZZ": "Coaster"})
     assert s["magaza_urun"]["Shop A"].get("Coaster") == 3
 
 
