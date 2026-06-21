@@ -237,6 +237,16 @@ tr.toplam td{font-weight:800;background:var(--zemin);border-top:2px solid var(--
     <div class="tablosar"><table id="t-rapor"></table></div>
     <div class="bilgi" id="urun-notu"></div>
     <div id="amazon-notu"></div>
+
+    <div id="siparis-icerik-blok" class="gizli" style="margin-top:26px">
+      <h2>Sipariş içeriği — "5 item" hangi ürünler?</h2>
+      <p class="alt2">Çok-ürünlü siparişlerin içeriği otomatik çözülür; Etsy'e tek tek bakmaya gerek yok. <span id="si-ozet" class="notmetin"></span></p>
+      <div class="satir" style="margin-bottom:10px">
+        <input id="si-ara" placeholder="Sipariş no, mağaza veya ürün ara…" style="flex:1;max-width:420px">
+        <button class="ghost" id="btn-si-ara">Ara</button>
+      </div>
+      <div class="tablosar"><table id="t-siparis-icerik"></table></div>
+    </div>
   </section>
 </div>
 
@@ -513,7 +523,22 @@ async function raporGoster(){
     : `Ürün adetleri (${s.urun_basliklari.length} kolon) <b>form beyanından</b> yazıldı. Kalem detayı yüklersen otomatik SKU sınıflandırmaya geçebilirsin.`;
   $("#amazon-notu").innerHTML = s.amazon&&s.amazon.length
     ? `<div class="uyari">Rapor dışı (Amazon): ${s.amazon.map(a=>`${a.magaza} (${tl(a.siparis)} sipariş)`).join(" · ")}</div>` : "";
+  if(sonAnaliz&&sonAnaliz.kalem_var){ $("#siparis-icerik-blok").classList.remove("gizli"); siparisIcerikYukle(""); }
+  else { $("#siparis-icerik-blok").classList.add("gizli"); }
 }
+async function siparisIcerikYukle(ara){
+  const j=await api("/api/siparis_icerik",{ara:ara||""},"Sipariş içerikleri çözülüyor…");
+  if(!j)return;
+  $("#si-ozet").textContent=`${j.coklu} çok-ürünlü, ${j.tekil} tekil sipariş (toplam ${j.toplam_siparis}).`;
+  let h="<tr><th>Sipariş No</th><th>Mağaza</th><th>Adet</th><th>İçindekiler</th></tr>";
+  j.kayitlar.forEach(k=>{
+    const items=k.items.map(it=>`${it.adet}× ${it.ad} <span class="notmetin">[${it.kategori}]</span>`).join("<br>");
+    h+=`<tr><td class="ad">${k.order_no}</td><td>${k.store}</td><td>${tl(k.toplam_adet)}</td><td style="text-align:left;white-space:normal">${items}</td></tr>`;
+  });
+  $("#t-siparis-icerik").innerHTML=h;
+}
+$("#btn-si-ara")&&$("#btn-si-ara").addEventListener("click",()=>siparisIcerikYukle($("#si-ara").value));
+$("#si-ara")&&$("#si-ara").addEventListener("keydown",e=>{if(e.key==="Enter")siparisIcerikYukle($("#si-ara").value);});
 function kart(k,v,s){return `<div class="kart"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||""}</div></div>`;}
 function kartVurgu(k,v,s){return `<div class="kart vurgu"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||""}</div></div>`;}
 function raporTablo(s){

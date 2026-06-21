@@ -174,3 +174,45 @@ def kalem_isle(yol, ay=None, yil=None, mapping=None):
         "kapsama": {"toplam": toplam, "siniflanan": siniflanan,
                     "oran": round(siniflanan / toplam, 3) if toplam else 0},
     }
+
+
+def siparis_icerikleri(yol, ay=None, yil=None):
+    """Çok-ürünlü siparişlerin içeriğini çözer ('5 item' → gerçek ürünler).
+    Mağaza sahibinin Etsy'e manuel bakma ihtiyacını ortadan kaldırır.
+
+    Dönüş:
+      icerik: {order_no: {"store":.., "items":[{ad,sku,adet,kategori}],
+                          "toplam_adet":..}}  — yalnızca çok-ürünlü siparişler
+      tekil: tekil (1 ürünlü) sipariş sayısı
+    """
+    mapping = yukle()
+    satirlar = _csv_oku(yol)
+    b = list(satirlar[0].keys())
+    kmap = {k: kolon_bul(b, v, prefix=False) for k, v in KALEM_KOLONLARI.items()}
+    if kmap["order_no"] is None or kmap["item_name"] is None:
+        raise CsvHata("Sipariş içeriği için 'Order #' ve 'Item Name' kolonları "
+                      "gerekli. Bulunan: " + ", ".join(b))
+    gruplu = {}
+    for r in satirlar:
+        if ay and yil and kmap["ship_date"]:
+            t = _tarih(r.get(kmap["ship_date"]))
+            if t and (t.year != yil or t.month != ay):
+                continue
+        ad = (r.get(kmap["item_name"]) or "").strip()
+        if not ad or ad.startswith("("):
+            continue
+        ono = (r.get(kmap["order_no"]) or "").strip()
+        if not ono:
+            continue
+        sku = (r.get(kmap["sku"]) or "").strip() if kmap["sku"] else ""
+        q = int(sayi(r.get(kmap["qty"]), 1) or 1)
+        g = gruplu.setdefault(ono, {"store": (r.get(kmap["store"]) or "").strip(),
+                                    "items": [], "toplam_adet": 0})
+        g["items"].append({"ad": ad, "sku": sku, "adet": q,
+                           "kategori": siniflandir(ad, sku, mapping) or DIGER})
+        g["toplam_adet"] += q
+    icerik = {o: g for o, g in gruplu.items() if g["toplam_adet"] > 1}
+    tekil = sum(1 for g in gruplu.values() if g["toplam_adet"] == 1)
+    return {"icerik": icerik, "tekil": tekil,
+            "coklu": len(icerik), "toplam_siparis": len(gruplu)}
+

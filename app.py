@@ -608,6 +608,34 @@ def urun_denetim():
     })
 
 
+@app.route("/api/siparis_icerik", methods=["POST"])
+def siparis_icerik_gor():
+    """Çok-ürünlü siparişlerin ('5 item') içeriğini listeler — Etsy'e manuel
+    bakma ihtiyacını giderir. İsteğe bağlı 'ara' ile filtreler."""
+    a = DURUM["analiz"]
+    if not a:
+        return _hata("Önce analiz çalıştırın.")
+    if not (DURUM["kalem_yolu"] and os.path.exists(DURUM["kalem_yolu"])):
+        return _hata("Sipariş içeriği için kalem detayı (Item Name'li export) "
+                     "yükleyin.")
+    veri = request.get_json(silent=True) or {}
+    ara = (veri.get("ara") or "").strip().lower()
+    try:
+        s = urun_eslestirme.siparis_icerikleri(DURUM["kalem_yolu"], a["ay"], a["yil"])
+    except shipstation_csv.CsvHata as e:
+        return _hata(str(e))
+    kayitlar = []
+    for ono, g in s["icerik"].items():
+        if ara and ara not in ono.lower() and ara not in g["store"].lower() \
+                and not any(ara in it["ad"].lower() for it in g["items"]):
+            continue
+        kayitlar.append({"order_no": ono, "store": g["store"],
+                         "toplam_adet": g["toplam_adet"], "items": g["items"]})
+    kayitlar.sort(key=lambda x: -x["toplam_adet"])
+    return jsonify({"kayitlar": kayitlar[:300], "coklu": s["coklu"],
+                    "tekil": s["tekil"], "toplam_siparis": s["toplam_siparis"]})
+
+
 @app.route("/api/urun/ogret", methods=["POST"])
 def urun_ogret():
     """Bilinmeyen SKU'yu bir kategoriye öğret (urun_mapping.json'a yazılır,
@@ -638,13 +666,22 @@ def rapor_uret_endpoint():
         kaynaklar, ciro_kaynagi, urun_kaynagi)
 
     eslesmeyen = DURUM["kargo"]["eslesmeyen"] if DURUM["kargo"] else None
+    # Çok-ürünlü sipariş içerikleri (kalem detayı varsa) → Excel 2. sayfa
+    siparis_icerik = None
+    if DURUM["kalem_yolu"] and os.path.exists(DURUM["kalem_yolu"]):
+        try:
+            siparis_icerik = urun_eslestirme.siparis_icerikleri(
+                DURUM["kalem_yolu"], a["ay"], a["yil"])["icerik"]
+        except shipstation_csv.CsvHata:
+            siparis_icerik = None
     dosya_adi = f"Lazer_Grubu_Rapor_{a['yil']}_{a['ay_adi'].upper()}.xlsx"
     yol = os.path.join(CIKTI_KLASORU, dosya_adi)
     try:
         rapor.rapor_uret(yol, a["ay_adi"], a["yil"], satirlar,
                          amazon_satirlari=amazon_liste,
                          eslesmeyen_maliyet=eslesmeyen,
-                         urun_basliklari=urun_basliklari)
+                         urun_basliklari=urun_basliklari,
+                         siparis_icerik=siparis_icerik)
     except PermissionError:
         return _hata(f"'{dosya_adi}' başka bir programda açık görünüyor; "
                      "kapatıp tekrar deneyin.")

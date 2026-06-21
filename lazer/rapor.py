@@ -53,11 +53,13 @@ def _stil(ws, satir, kalin=False, dolgu=None):
 
 
 def rapor_uret(yol, ay_adi, yil, satirlar, amazon_satirlari=None,
-               eslesmeyen_maliyet=None, urun_basliklari=None):
+               eslesmeyen_maliyet=None, urun_basliklari=None,
+               siparis_icerik=None):
     """satirlar: [{magaza, ciro, vergi, reklam, kargo_musteri, kargo,
                    adet, ilave_odeme, upgrade, urunler?}]
-    urun_basliklari verilirse rapor sağına ürün adet kolonları eklenir
-    (form beyanından; finansal kolonları/formülleri etkilemez)."""
+    urun_basliklari verilirse rapor sağına ürün adet kolonları eklenir.
+    siparis_icerik verilirse 2. sayfada çok-ürünlü siparişlerin içeriği
+    listelenir (mağaza sahibinin Etsy'e manuel bakma ihtiyacını giderir)."""
     urun_basliklari = urun_basliklari or []
     son_fin = len(BASLIKLAR)  # son finansal kolon (Q = 17)
     tum_basliklar = list(BASLIKLAR) + list(urun_basliklari)
@@ -177,6 +179,34 @@ def rapor_uret(yol, ay_adi, yil, satirlar, amazon_satirlari=None,
             f"eşleştirilemedi (toplam {eslesmeyen_maliyet['maliyet']:.2f}$ kargo "
             "maliyeti rapora dahil edilmedi)."))
         n.font = Font(italic=True, color="990000")
+
+    # 2. sayfa: Sipariş İçeriği (çok-ürünlü siparişler → gerçek ürünler)
+    if siparis_icerik:
+        ws2 = wb.create_sheet("Sipariş İçeriği")
+        basliklar2 = ["Sipariş No", "Mağaza", "Adet", "Ürün", "SKU", "Kategori"]
+        for k, ad in enumerate(basliklar2, start=1):
+            h = ws2.cell(row=1, column=k, value=ad)
+            h.fill = TURUNCU
+            h.font = BEYAZ_KALIN
+            h.border = KENARLIK
+        ws2.freeze_panes = "A2"
+        for k, g in zip([34, 22, 7, 60, 16, 18], range(1, 7)):
+            ws2.column_dimensions[get_column_letter(g)].width = k
+        r2 = 2
+        for ono in sorted(siparis_icerik):
+            g = siparis_icerik[ono]
+            ilk = True
+            for it in g["items"]:
+                ws2.cell(row=r2, column=1,
+                         value=ono if ilk else "").border = KENARLIK
+                ws2.cell(row=r2, column=2,
+                         value=g["store"] if ilk else "").border = KENARLIK
+                ws2.cell(row=r2, column=3, value=it["adet"]).border = KENARLIK
+                ws2.cell(row=r2, column=4, value=it["ad"]).border = KENARLIK
+                ws2.cell(row=r2, column=5, value=it["sku"]).border = KENARLIK
+                ws2.cell(row=r2, column=6, value=it["kategori"]).border = KENARLIK
+                ilk = False
+                r2 += 1
 
     wb.save(yol)
     return yol

@@ -110,3 +110,40 @@ def test_ogrenilmis_sku_kalemde(kalem_csv):
     # Beach towel SKU'sunu Diğer dışında bir kategoriye öğret → öyle sınıflanır
     s = ue.kalem_isle(kalem_csv, 5, 2026, {"TWL": "Coaster"})
     assert s["magaza_urun"]["Shop A"].get("Coaster") == 3
+
+
+@pytest.fixture
+def coklu_kalem_csv(tmp_path):
+    alan = ["Order #", "Ship Date", "Store", "Item Name", "Item Quantity",
+            "Item SKU"]
+    satirlar = [
+        # Çok-ürünlü sipariş (iki farklı kalem)
+        ["100", "05/03/2026", "Shop A", "Custom Coffee Mug", "2", "M1"],
+        ["100", "05/03/2026", "Shop A", "Custom Wine Glass", "3", "W1"],
+        # Tekil sipariş
+        ["101", "05/04/2026", "Shop A", "Custom Lighter", "1", "L1"],
+        # Tek satır ama adet>1 → yine çok-ürünlü sayılır
+        ["102", "05/05/2026", "Shop B", "Custom Tumbler", "5", "T1"],
+    ]
+    yol = tmp_path / "ck.csv"
+    with open(yol, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(alan)
+        w.writerows(satirlar)
+    return str(yol)
+
+
+def test_siparis_icerik_coklu(coklu_kalem_csv):
+    s = ue.siparis_icerikleri(coklu_kalem_csv, 5, 2026)
+    assert s["coklu"] == 2          # sipariş 100 (5 adet) + 102 (5 adet)
+    assert s["tekil"] == 1          # sipariş 101
+    g = s["icerik"]["100"]
+    assert g["toplam_adet"] == 5
+    assert len(g["items"]) == 2     # mug + wine glass
+    adlar = {it["ad"] for it in g["items"]}
+    assert "Custom Coffee Mug" in adlar and "Custom Wine Glass" in adlar
+
+
+def test_siparis_icerik_tekil_haric(coklu_kalem_csv):
+    s = ue.siparis_icerikleri(coklu_kalem_csv, 5, 2026)
+    assert "101" not in s["icerik"]   # tekil sipariş listede değil
