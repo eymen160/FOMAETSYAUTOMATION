@@ -5,6 +5,21 @@ eşleştirip denetleyen ve ekibin ay sonu Excel raporunu otomatik üreten
 lokal web uygulaması. Tüm işlem bilgisayarınızda yapılır; veri hiçbir dış
 servise gönderilmez (ShipStation API çağrıları hariç).
 
+## Giriş (sign-in)
+
+Uygulama açılışta giriş ekranı gösterir. Varsayılan demo bilgileri:
+- **Kullanıcı adı:** `admin`
+- **Şifre:** `lazer2026`
+
+Bunları değiştirmek için `.env` dosyasına ekleyin:
+```
+LAZER_KULLANICI=istediginiz_kullanici
+LAZER_SIFRE=guclu_bir_sifre
+LAZER_SECRET=rastgele_uzun_bir_anahtar
+```
+Şifre düz metin saklanmaz; oturum çerezi `LAZER_SECRET`/`.flask_secret` ile
+imzalanır. Sunumdan önce şifreyi değiştirmeniz önerilir.
+
 ## Demo (sunum)
 
 Hızlı bir gösterim için açılış ekranındaki **"Demo verisini yükle"** butonuna

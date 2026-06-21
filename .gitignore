@@ -18,3 +18,4 @@ urun_mapping.json
 !demo/demo_kalem_detay.csv
 !demo/store_mapping_baseline.json
 # (demo/store_mapping.json çalışma anında baseline'dan üretilir → izlenmez)
+.flask_secret

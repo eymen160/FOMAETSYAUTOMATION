@@ -2,10 +2,13 @@
 # Çalıştırma: python app.py  →  http://127.0.0.1:5000
 import glob
 import os
+import secrets
 import traceback
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, send_file
+from flask import (Flask, jsonify, redirect, render_template, request,
+                   send_file, session, url_for)
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from lazer import (denetim, eslestirme, master, rapor, shipstation_api,
                    shipstation_csv, urun_eslestirme, formsuz)
@@ -15,6 +18,75 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+
+
+# ---- Oturum / giriş -------------------------------------------------------
+def _gizli_anahtar():
+    """Kalıcı Flask secret key (oturumların restart sonrası korunması için)."""
+    env = os.environ.get("LAZER_SECRET")
+    if env:
+        return env
+    yol = ".flask_secret"
+    if os.path.exists(yol):
+        with open(yol) as f:
+            return f.read().strip()
+    anahtar = secrets.token_hex(32)
+    try:
+        with open(yol, "w") as f:
+            f.write(anahtar)
+        os.chmod(yol, 0o600)
+    except OSError:
+        pass
+    return anahtar
+
+
+app.secret_key = _gizli_anahtar()
+
+# Giriş bilgileri .env'den (varsayılan demo için). Şifre düz metin saklanmaz;
+# karşılaştırma sırasında hash'lenir.
+GIRIS_KULLANICI = os.environ.get("LAZER_KULLANICI", "admin")
+GIRIS_SIFRE_HASH = generate_password_hash(
+    os.environ.get("LAZER_SIFRE", "lazer2026"))
+
+
+ACIK_YOLLAR = {"giris_sayfa", "cikis", "static"}
+
+
+@app.before_request
+def _oturum_kontrol():
+    # Giriş ve statik dışındaki her şey oturum ister
+    if request.endpoint in ACIK_YOLLAR:
+        return None
+    if session.get("giris"):
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"hata": "Oturum gerekli. Lütfen tekrar giriş yapın.",
+                        "giris_gerekli": True}), 401
+    return redirect(url_for("giris_sayfa"))
+
+
+@app.route("/giris", methods=["GET", "POST"])
+def giris_sayfa():
+    if request.method == "POST":
+        veri = request.get_json(silent=True) or request.form
+        kul = (veri.get("kullanici") or "").strip()
+        sif = veri.get("sifre") or ""
+        if kul == GIRIS_KULLANICI and check_password_hash(GIRIS_SIFRE_HASH, sif):
+            session["giris"] = True
+            session["kullanici"] = kul
+            session.permanent = True
+            return jsonify({"tamam": True})
+        return jsonify({"hata": "Kullanıcı adı veya şifre hatalı."}), 401
+    if session.get("giris"):
+        return redirect(url_for("anasayfa"))
+    return render_template("giris.html")
+
+
+@app.route("/cikis")
+def cikis():
+    session.clear()
+    return redirect(url_for("giris_sayfa"))
+
 
 YUKLEME_KLASORU = "yuklenen"
 CIKTI_KLASORU = "cikti"

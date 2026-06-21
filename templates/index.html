@@ -31,6 +31,9 @@ header{background:#fff;border-bottom:1px solid var(--cizgi);padding:14px 28px;di
 header .logo{width:30px;height:30px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800}
 header b{font-size:16px}
 header .alt{color:var(--gri);font-size:13px;margin-left:auto}
+header .cikis{margin-left:18px;font-size:13px;font-weight:600;color:var(--accent-dark);
+  text-decoration:none;border:1px solid var(--cizgi);padding:6px 14px;border-radius:8px}
+header .cikis:hover{background:var(--accent-soft);border-color:var(--accent)}
 
 /* ---- landing ---- */
 #landing{min-height:calc(100vh - 60px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px}
@@ -129,6 +132,7 @@ tr.toplam td{font-weight:800;background:var(--zemin);border-top:2px solid var(--
   <div class="logo">L</div>
   <b>Lazer Grubu</b>
   <span class="alt" id="ust-alt">Aylık Rapor Otomasyonu</span>
+  <a class="cikis" href="/cikis" title="Çıkış yap">Çıkış</a>
 </header>
 
 <!-- ===================== LANDING ===================== -->
@@ -269,6 +273,7 @@ async function api(yol,govde,metin){
   bekle(true,metin);
   try{
     const r=await fetch(yol,govde?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(govde)}:{method:"POST"});
+    if(r.status===401){ window.location="/giris"; return null; }
     const j=await r.json();
     if(!r.ok){mesaj(j.hata||"Bilinmeyen hata","hata");return null;}
     return j;
@@ -297,7 +302,9 @@ document.querySelectorAll(".stepper .st").forEach(st=>{
 
 /* ---- başlangıç durumu ---- */
 async function durumYukle(){
-  const r=await fetch("/api/durum"); durumBilgi=await r.json();
+  const r=await fetch("/api/durum");
+  if(r.status===401){ window.location="/giris"; return; }
+  durumBilgi=await r.json();
   const aySec=$("#ay"),yilSec=$("#yil");
   if(!aySec.options.length){
     durumBilgi.aylar.forEach(a=>aySec.add(new Option(a,a)));
